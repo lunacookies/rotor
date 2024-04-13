@@ -14,3 +14,4 @@ typedef float F32;
 typedef double F64;
 
 #define function static
+#define local_persist static
