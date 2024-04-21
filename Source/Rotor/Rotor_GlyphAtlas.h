@@ -5,6 +5,9 @@ struct GlyphAtlasSlot
 	CGGlyph glyph;
 	U64 x;
 	U64 y;
+	U64 width;
+	U64 height;
+	U64 baseline;
 };
 
 typedef struct GlyphAtlas GlyphAtlas;

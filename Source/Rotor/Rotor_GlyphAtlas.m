@@ -61,6 +61,9 @@ GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *
 	slot->glyph = glyph;
 	slot->x = atlas->current_row_x;
 	slot->y = atlas->current_row_y;
+	slot->width = glyph_width;
+	slot->height = glyph_height;
+	slot->baseline = (U64)glyph_baseline;
 
 	CGPoint position = { 0 };
 	position.x = atlas->current_row_x - bounding_rect.origin.x + 0.5;
