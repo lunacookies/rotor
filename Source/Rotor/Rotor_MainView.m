@@ -93,16 +93,28 @@ GlyphAtlas glyph_atlas;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	char *text = "hello world 👋 “no.” “no”. WAVE Te";
-	F32 font_size = 12;
+	char *text = "hello world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵";
+	CFStringRef string =
+	        CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
+	U64 code_unit_count = (U64)CFStringGetLength(string);
+
+	simd_float3 *colors = calloc(code_unit_count, sizeof(simd_float3));
+
+	for (U64 i = 0; i < code_unit_count; i++)
+	{
+		F32 fraction_through = (F32)i / (F32)code_unit_count;
+		colors[i].r = fraction_through;
+		colors[i].g = 1 - fraction_through;
+		colors[i].b = 0.5;
+	}
+
+	F32 font_size = 50;
 	CTFontRef font =
 	        (__bridge CTFontRef)[NSFont systemFontOfSize:font_size weight:NSFontWeightRegular];
 
 	CFDictionaryRef attributes = (__bridge CFDictionaryRef)
 	        @{ (__bridge NSString *)kCTFontAttributeName : (__bridge NSFont *)font };
 
-	CFStringRef string =
-	        CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
 	CFAttributedStringRef attributed =
 	        CFAttributedStringCreate(kCFAllocatorDefault, string, attributes);
 	CTLineRef line = CTLineCreateWithAttributedString(attributed);
@@ -112,6 +124,7 @@ GlyphAtlas glyph_atlas;
 	simd_float2 *rect_sizes = calloc(glyph_count, sizeof(simd_float2));
 	simd_float2 *texture_origins = calloc(glyph_count, sizeof(simd_float2));
 	simd_float2 *texture_sizes = calloc(glyph_count, sizeof(simd_float2));
+	U32 *color_indexes = calloc(glyph_count, sizeof(U32));
 
 	CFArrayRef runs = CTLineGetGlyphRuns(line);
 	U64 run_count = (U64)CFArrayGetCount(runs);
@@ -140,8 +153,10 @@ GlyphAtlas glyph_atlas;
 
 		CGGlyph *glyphs = calloc(run_glyph_count, sizeof(CGGlyph));
 		CGPoint *glyph_positions = calloc(run_glyph_count, sizeof(CGPoint));
+		CFIndex *indexes = calloc(run_glyph_count, sizeof(CFIndex));
 		CTRunGetGlyphs(run, range, glyphs);
 		CTRunGetPositions(run, range, glyph_positions);
+		CTRunGetStringIndices(run, range, indexes);
 
 		for (U64 j = 0; j < run_glyph_count; j++)
 		{
@@ -161,6 +176,8 @@ GlyphAtlas glyph_atlas;
 			texture_sizes[glyph_index].x = slot->width;
 			texture_sizes[glyph_index].y = slot->height;
 
+			color_indexes[glyph_index] = (U32)indexes[j];
+
 			glyph_index++;
 		}
 	}
@@ -175,10 +192,13 @@ GlyphAtlas glyph_atlas;
 	texture_bounds.y = 1024;
 	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:5];
 
+	[encoder setVertexBytes:colors length:code_unit_count * sizeof(simd_float3) atIndex:6];
+	[encoder setVertexBytes:color_indexes length:glyph_count * sizeof(U32) atIndex:7];
+
 	simd_float2 bounds = { 0 };
 	bounds.x = (F32)self.bounds.size.width;
 	bounds.y = (F32)self.bounds.size.height;
-	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:6];
+	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:8];
 
 	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle

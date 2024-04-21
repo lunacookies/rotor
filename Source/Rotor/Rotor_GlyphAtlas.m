@@ -14,16 +14,15 @@ GlyphAtlasInit(GlyphAtlas *atlas, id<MTLDevice> device, F32 scale_factor)
 	atlas->height_pixels = (U64)CeilF32(atlas->height * scale_factor);
 
 	atlas->pixels = calloc(atlas->width_pixels * atlas->height_pixels, sizeof(U32));
-	CGColorSpaceRef colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+	CGColorSpaceRef colorspace = CGColorSpaceCreateWithName(kCGColorSpaceLinearGray);
 	atlas->context = CGBitmapContextCreate(atlas->pixels, atlas->width_pixels,
-	        atlas->height_pixels, 8, 4 * atlas->width_pixels, colorspace,
-	        kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
+	        atlas->height_pixels, 8, atlas->width_pixels, colorspace, kCGImageAlphaOnly);
 	CGContextScaleCTM(atlas->context, scale_factor, scale_factor);
-	CGContextSetFillColorWithColor(atlas->context, CGColorCreateSRGB(1, 1, 1, 1));
 
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
 	descriptor.width = atlas->width_pixels;
 	descriptor.height = atlas->height_pixels;
+	descriptor.pixelFormat = MTLPixelFormatA8Unorm;
 	atlas->texture = [device newTextureWithDescriptor:descriptor];
 
 	atlas->slot_count = 1 << 16;
@@ -84,7 +83,7 @@ GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *
 	        replaceRegion:MTLRegionMake2D(0, 0, atlas->width_pixels, atlas->height_pixels)
 	          mipmapLevel:0
 	            withBytes:atlas->pixels
-	          bytesPerRow:atlas->width_pixels * sizeof(U32)];
+	          bytesPerRow:atlas->width_pixels];
 }
 
 function GlyphAtlasSlot *
