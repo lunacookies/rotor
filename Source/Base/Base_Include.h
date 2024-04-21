@@ -15,3 +15,9 @@ typedef double F64;
 
 #define function static
 #define local_persist static
+
+#define Min(x, y) (((x) < (y)) ? (x) : (y))
+#define Max(x, y) (((x) > (y)) ? (x) : (y))
+
+#define CeilF32 ceilf
+#define CeilF64 ceil

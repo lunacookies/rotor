@@ -6,7 +6,10 @@
 
 #include "Base/Base_Include.h"
 
+#include "Rotor_GlyphAtlas.h"
 #include "Rotor_MainView.h"
+
+#include "Rotor_GlyphAtlas.m"
 #include "Rotor_MainView.m"
 
 function NSString *
