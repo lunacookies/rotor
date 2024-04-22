@@ -56,6 +56,7 @@ GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *
 		atlas->current_row_x = 0;
 	}
 
+	CFRetain(font);
 	slot->font = font;
 	slot->glyph = glyph;
 	slot->x = atlas->current_row_x;

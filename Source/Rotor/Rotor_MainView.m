@@ -174,6 +174,9 @@ Box *boxes;
 
 			glyph_index++;
 		}
+
+		free(glyphs);
+		free(glyph_positions);
 	}
 
 	[encoder setVertexBytes:boxes length:glyph_count * sizeof(Box) atIndex:1];
@@ -203,6 +206,11 @@ Box *boxes;
 
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
+
+	CFRelease(line);
+	CFRelease(attributed);
+	CFRelease(string);
+	free(boxes);
 }
 
 - (void)viewDidChangeBackingProperties
@@ -239,6 +247,7 @@ Box *boxes;
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
 	descriptor.textureType = MTLTextureType2DMultisample;
 	descriptor.usage = MTLTextureUsageRenderTarget;
+	descriptor.storageMode = MTLStorageModeMemoryless;
 	descriptor.width = (U64)(self.bounds.size.width * scale_factor);
 	descriptor.height = (U64)(self.bounds.size.height * scale_factor);
 	descriptor.pixelFormat = metal_layer.pixelFormat;
