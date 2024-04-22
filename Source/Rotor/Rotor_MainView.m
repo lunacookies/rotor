@@ -2,6 +2,16 @@
 MainView () <CALayerDelegate>
 @end
 
+typedef struct Box Box;
+struct Box
+{
+	simd_float2 origin;
+	simd_float2 size;
+	simd_float2 texture_origin;
+	simd_float2 texture_size;
+	U32 color_index;
+};
+
 @implementation MainView
 
 CAMetalLayer *metal_layer;
@@ -11,6 +21,7 @@ id<MTLRenderPipelineState> pipeline_state;
 CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
+Box *boxes;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -93,7 +104,7 @@ GlyphAtlas glyph_atlas;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	char *text = "hello world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵";
+	char *text = "hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵";
 	CFStringRef string =
 	        CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
 	U64 code_unit_count = (U64)CFStringGetLength(string);
@@ -120,11 +131,7 @@ GlyphAtlas glyph_atlas;
 	CTLineRef line = CTLineCreateWithAttributedString(attributed);
 	U64 glyph_count = (U64)CTLineGetGlyphCount(line);
 
-	simd_float2 *rect_origins = calloc(glyph_count, sizeof(simd_float2));
-	simd_float2 *rect_sizes = calloc(glyph_count, sizeof(simd_float2));
-	simd_float2 *texture_origins = calloc(glyph_count, sizeof(simd_float2));
-	simd_float2 *texture_sizes = calloc(glyph_count, sizeof(simd_float2));
-	U32 *color_indexes = calloc(glyph_count, sizeof(U32));
+	boxes = calloc(glyph_count, sizeof(Box));
 
 	CFArrayRef runs = CTLineGetGlyphRuns(line);
 	U64 run_count = (U64)CFArrayGetCount(runs);
@@ -163,42 +170,38 @@ GlyphAtlas glyph_atlas;
 			CGGlyph glyph = glyphs[j];
 			GlyphAtlasSlot *slot = GlyphAtlasGet(&glyph_atlas, run_font, glyph);
 
-			rect_origins[glyph_index].x = (F32)glyph_positions[j].x;
-			rect_origins[glyph_index].y =
+			boxes[glyph_index].origin.x = (F32)glyph_positions[j].x;
+			boxes[glyph_index].origin.y =
 			        (F32)glyph_positions[j].y - slot->baseline + 100;
 
-			rect_sizes[glyph_index].x = slot->width;
-			rect_sizes[glyph_index].y = slot->height;
+			boxes[glyph_index].size.x = slot->width;
+			boxes[glyph_index].size.y = slot->height;
 
-			texture_origins[glyph_index].x = slot->x;
-			texture_origins[glyph_index].y = slot->y;
+			boxes[glyph_index].texture_origin.x = slot->x;
+			boxes[glyph_index].texture_origin.y = slot->y;
 
-			texture_sizes[glyph_index].x = slot->width;
-			texture_sizes[glyph_index].y = slot->height;
+			boxes[glyph_index].texture_size.x = slot->width;
+			boxes[glyph_index].texture_size.y = slot->height;
 
-			color_indexes[glyph_index] = (U32)indexes[j];
+			boxes[glyph_index].color_index = (U32)indexes[j];
 
 			glyph_index++;
 		}
 	}
 
-	[encoder setVertexBytes:rect_origins length:glyph_count * sizeof(simd_float2) atIndex:1];
-	[encoder setVertexBytes:rect_sizes length:glyph_count * sizeof(simd_float2) atIndex:2];
-	[encoder setVertexBytes:texture_origins length:glyph_count * sizeof(simd_float2) atIndex:3];
-	[encoder setVertexBytes:texture_sizes length:glyph_count * sizeof(simd_float2) atIndex:4];
+	[encoder setVertexBytes:boxes length:glyph_count * sizeof(Box) atIndex:1];
 
 	simd_float2 texture_bounds = { 0 };
 	texture_bounds.x = 1024;
 	texture_bounds.y = 1024;
-	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:5];
+	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:2];
 
-	[encoder setVertexBytes:colors length:code_unit_count * sizeof(simd_float3) atIndex:6];
-	[encoder setVertexBytes:color_indexes length:glyph_count * sizeof(U32) atIndex:7];
+	[encoder setVertexBytes:colors length:code_unit_count * sizeof(simd_float3) atIndex:3];
 
 	simd_float2 bounds = { 0 };
 	bounds.x = (F32)self.bounds.size.width;
 	bounds.y = (F32)self.bounds.size.height;
-	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:8];
+	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:4];
 
 	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
