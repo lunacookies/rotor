@@ -9,7 +9,6 @@ struct Box
 	simd_float2 size;
 	simd_float2 texture_origin;
 	simd_float2 texture_size;
-	U32 color_index;
 };
 
 @implementation MainView
@@ -110,17 +109,6 @@ Box *boxes;
 	char *text = "hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵";
 	CFStringRef string =
 	        CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
-	U64 code_unit_count = (U64)CFStringGetLength(string);
-
-	simd_float3 *colors = calloc(code_unit_count, sizeof(simd_float3));
-
-	for (U64 i = 0; i < code_unit_count; i++)
-	{
-		F32 fraction_through = (F32)i / (F32)code_unit_count;
-		colors[i].r = fraction_through;
-		colors[i].g = 1 - fraction_through;
-		colors[i].b = 0.5;
-	}
 
 	F32 font_size = 50;
 	CTFontRef font =
@@ -163,10 +151,8 @@ Box *boxes;
 
 		CGGlyph *glyphs = calloc(run_glyph_count, sizeof(CGGlyph));
 		CGPoint *glyph_positions = calloc(run_glyph_count, sizeof(CGPoint));
-		CFIndex *indexes = calloc(run_glyph_count, sizeof(CFIndex));
 		CTRunGetGlyphs(run, range, glyphs);
 		CTRunGetPositions(run, range, glyph_positions);
-		CTRunGetStringIndices(run, range, indexes);
 
 		for (U64 j = 0; j < run_glyph_count; j++)
 		{
@@ -186,8 +172,6 @@ Box *boxes;
 			boxes[glyph_index].texture_size.x = slot->width;
 			boxes[glyph_index].texture_size.y = slot->height;
 
-			boxes[glyph_index].color_index = (U32)indexes[j];
-
 			glyph_index++;
 		}
 	}
@@ -199,12 +183,16 @@ Box *boxes;
 	texture_bounds.y = 1024;
 	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:2];
 
-	[encoder setVertexBytes:colors length:code_unit_count * sizeof(simd_float3) atIndex:3];
-
 	simd_float2 bounds = { 0 };
 	bounds.x = (F32)self.bounds.size.width;
 	bounds.y = (F32)self.bounds.size.height;
-	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:4];
+	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:3];
+
+	simd_float3 color = { 0 };
+	color.r = 0.5;
+	color.g = 0.5;
+	color.b = 1;
+	[encoder setFragmentBytes:&color length:sizeof(color) atIndex:0];
 
 	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
