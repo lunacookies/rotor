@@ -15,6 +15,7 @@ struct Box
 @implementation MainView
 
 CAMetalLayer *metal_layer;
+id<MTLTexture> multisample_texture;
 id<MTLCommandQueue> command_queue;
 id<MTLRenderPipelineState> pipeline_state;
 
@@ -48,6 +49,7 @@ Box *boxes;
 	}
 
 	MTLRenderPipelineDescriptor *descriptor = [[MTLRenderPipelineDescriptor alloc] init];
+	descriptor.rasterSampleCount = 4;
 	descriptor.colorAttachments[0].pixelFormat = metal_layer.pixelFormat;
 	descriptor.colorAttachments[0].blendingEnabled = YES;
 	descriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
@@ -83,9 +85,10 @@ Box *boxes;
 	id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
 
 	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-	descriptor.colorAttachments[0].texture = drawable.texture;
+	descriptor.colorAttachments[0].texture = multisample_texture;
+	descriptor.colorAttachments[0].resolveTexture = drawable.texture;
 	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+	descriptor.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
 	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.25, 0.25, 0.25, 1);
 
 	id<MTLRenderCommandEncoder> encoder =
@@ -223,6 +226,7 @@ Box *boxes;
 	GlyphAtlasInit(&glyph_atlas, metal_layer.device, scale_factor);
 
 	metal_layer.contentsScale = self.window.backingScaleFactor;
+	[self updateMultisampleTexture];
 }
 
 - (void)setFrameSize:(NSSize)size
@@ -238,6 +242,20 @@ Box *boxes;
 	}
 
 	metal_layer.drawableSize = size;
+	[self updateMultisampleTexture];
+}
+
+- (void)updateMultisampleTexture
+{
+	F32 scale_factor = (F32)self.window.backingScaleFactor;
+	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
+	descriptor.textureType = MTLTextureType2DMultisample;
+	descriptor.usage = MTLTextureUsageRenderTarget;
+	descriptor.width = (U64)(self.bounds.size.width * scale_factor);
+	descriptor.height = (U64)(self.bounds.size.height * scale_factor);
+	descriptor.pixelFormat = metal_layer.pixelFormat;
+	descriptor.sampleCount = 4;
+	multisample_texture = [metal_layer.device newTextureWithDescriptor:descriptor];
 }
 
 function CVReturn

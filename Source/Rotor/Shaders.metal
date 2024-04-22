@@ -46,7 +46,7 @@ VertexShader(uint vertex_id [[vertex_id]], uint instance_id [[instance_id]],
 fragment float4
 FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<float> glyph_atlas)
 {
-	metal::sampler glyph_atlas_sampler(metal::mag_filter::nearest, metal::min_filter::nearest);
+	metal::sampler glyph_atlas_sampler(metal::mag_filter::linear, metal::min_filter::linear);
 	float sample = glyph_atlas.sample(glyph_atlas_sampler, data.texture_coordinates).a;
 	return sample * float4(data.color, 1);
 }
