@@ -11,6 +11,90 @@ struct Box
 	simd_float2 texture_size;
 };
 
+typedef struct RasterizationResult RasterizationResult;
+struct RasterizationResult
+{
+	Box *boxes;
+	U64 box_count;
+};
+
+function RasterizationResult
+RasterizeLine(Arena *arena, char *text, GlyphAtlas *glyph_atlas, CTFontRef font)
+{
+	RasterizationResult result = { 0 };
+
+	CFStringRef string =
+	        CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
+
+	CFDictionaryRef attributes = (__bridge CFDictionaryRef)
+	        @{ (__bridge NSString *)kCTFontAttributeName : (__bridge NSFont *)font };
+
+	CFAttributedStringRef attributed =
+	        CFAttributedStringCreate(kCFAllocatorDefault, string, attributes);
+	CTLineRef line = CTLineCreateWithAttributedString(attributed);
+
+	result.box_count = (U64)CTLineGetGlyphCount(line);
+	result.boxes = PushArray(arena, Box, result.box_count);
+
+	CFArrayRef runs = CTLineGetGlyphRuns(line);
+	U64 run_count = (U64)CFArrayGetCount(runs);
+
+	U64 glyph_index = 0;
+
+	for (U64 i = 0; i < run_count; i++)
+	{
+		CTRunRef run = CFArrayGetValueAtIndex(runs, (CFIndex)i);
+		U64 run_glyph_count = (U64)CTRunGetGlyphCount(run);
+
+		CFDictionaryRef run_attributes = CTRunGetAttributes(run);
+		const void *run_font_raw =
+		        CFDictionaryGetValue(run_attributes, kCTFontAttributeName);
+		Assert(run_font_raw != NULL);
+
+		// Ensure we actually have a CTFont instance.
+		CFTypeID ct_font_type_id = CTFontGetTypeID();
+		CFTypeID run_font_attribute_type_id = CFGetTypeID(run_font_raw);
+		Assert(ct_font_type_id == run_font_attribute_type_id);
+
+		CTFontRef run_font = run_font_raw;
+
+		CFRange range = { 0 };
+		range.length = (CFIndex)run_glyph_count;
+
+		CGGlyph *glyphs = PushArray(arena, CGGlyph, run_glyph_count);
+		CGPoint *glyph_positions = PushArray(arena, CGPoint, run_glyph_count);
+		CTRunGetGlyphs(run, range, glyphs);
+		CTRunGetPositions(run, range, glyph_positions);
+
+		for (U64 j = 0; j < run_glyph_count; j++)
+		{
+			CGGlyph glyph = glyphs[j];
+			GlyphAtlasSlot *slot = GlyphAtlasGet(glyph_atlas, run_font, glyph);
+
+			result.boxes[glyph_index].origin.x = (F32)glyph_positions[j].x;
+			result.boxes[glyph_index].origin.y =
+			        (F32)glyph_positions[j].y - slot->baseline + 100;
+
+			result.boxes[glyph_index].size.x = slot->width;
+			result.boxes[glyph_index].size.y = slot->height;
+
+			result.boxes[glyph_index].texture_origin.x = slot->x;
+			result.boxes[glyph_index].texture_origin.y = slot->y;
+
+			result.boxes[glyph_index].texture_size.x = slot->width;
+			result.boxes[glyph_index].texture_size.y = slot->height;
+
+			glyph_index++;
+		}
+	}
+
+	CFRelease(line);
+	CFRelease(attributed);
+	CFRelease(string);
+
+	return result;
+}
+
 @implementation MainView
 
 Arena *permanent_arena;
@@ -24,7 +108,7 @@ id<MTLRenderPipelineState> pipeline_state;
 CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
-Box *boxes;
+CTFontRef font;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -73,6 +157,9 @@ Box *boxes;
 		abort();
 	}
 
+	F32 font_size = 50;
+	font = (__bridge CTFontRef)[NSFont systemFontOfSize:font_size weight:NSFontWeightRegular];
+
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
 	CVDisplayLinkStart(display_link);
@@ -111,76 +198,11 @@ Box *boxes;
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
 	char *text = "hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵";
-	CFStringRef string =
-	        CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
-
-	F32 font_size = 50;
-	CTFontRef font =
-	        (__bridge CTFontRef)[NSFont systemFontOfSize:font_size weight:NSFontWeightRegular];
-
-	CFDictionaryRef attributes = (__bridge CFDictionaryRef)
-	        @{ (__bridge NSString *)kCTFontAttributeName : (__bridge NSFont *)font };
-
-	CFAttributedStringRef attributed =
-	        CFAttributedStringCreate(kCFAllocatorDefault, string, attributes);
-	CTLineRef line = CTLineCreateWithAttributedString(attributed);
-	U64 glyph_count = (U64)CTLineGetGlyphCount(line);
-
-	boxes = PushArray(frame_arena, Box, glyph_count);
-
-	CFArrayRef runs = CTLineGetGlyphRuns(line);
-	U64 run_count = (U64)CFArrayGetCount(runs);
-
-	U64 glyph_index = 0;
-
-	for (U64 i = 0; i < run_count; i++)
-	{
-		CTRunRef run = CFArrayGetValueAtIndex(runs, (CFIndex)i);
-		U64 run_glyph_count = (U64)CTRunGetGlyphCount(run);
-
-		CFDictionaryRef run_attributes = CTRunGetAttributes(run);
-		const void *run_font_raw =
-		        CFDictionaryGetValue(run_attributes, kCTFontAttributeName);
-		Assert(run_font_raw != NULL);
-
-		// Ensure we actually have a CTFont instance.
-		CFTypeID ct_font_type_id = CTFontGetTypeID();
-		CFTypeID run_font_attribute_type_id = CFGetTypeID(run_font_raw);
-		Assert(ct_font_type_id == run_font_attribute_type_id);
-
-		CTFontRef run_font = run_font_raw;
-
-		CFRange range = { 0 };
-		range.length = (CFIndex)run_glyph_count;
-
-		CGGlyph *glyphs = PushArray(frame_arena, CGGlyph, run_glyph_count);
-		CGPoint *glyph_positions = PushArray(frame_arena, CGPoint, run_glyph_count);
-		CTRunGetGlyphs(run, range, glyphs);
-		CTRunGetPositions(run, range, glyph_positions);
-
-		for (U64 j = 0; j < run_glyph_count; j++)
-		{
-			CGGlyph glyph = glyphs[j];
-			GlyphAtlasSlot *slot = GlyphAtlasGet(&glyph_atlas, run_font, glyph);
-
-			boxes[glyph_index].origin.x = (F32)glyph_positions[j].x;
-			boxes[glyph_index].origin.y =
-			        (F32)glyph_positions[j].y - slot->baseline + 100;
-
-			boxes[glyph_index].size.x = slot->width;
-			boxes[glyph_index].size.y = slot->height;
-
-			boxes[glyph_index].texture_origin.x = slot->x;
-			boxes[glyph_index].texture_origin.y = slot->y;
-
-			boxes[glyph_index].texture_size.x = slot->width;
-			boxes[glyph_index].texture_size.y = slot->height;
-
-			glyph_index++;
-		}
-	}
-
-	[encoder setVertexBytes:boxes length:glyph_count * sizeof(Box) atIndex:1];
+	RasterizationResult rasterization_result =
+	        RasterizeLine(frame_arena, text, &glyph_atlas, font);
+	[encoder setVertexBytes:rasterization_result.boxes
+	                 length:rasterization_result.box_count * sizeof(Box)
+	                atIndex:1];
 
 	simd_float2 texture_bounds = { 0 };
 	texture_bounds.x = 1024;
@@ -202,15 +224,11 @@ Box *boxes;
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
 	            vertexStart:0
 	            vertexCount:6
-	          instanceCount:glyph_count];
+	          instanceCount:rasterization_result.box_count];
 	[encoder endEncoding];
 
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
-
-	CFRelease(line);
-	CFRelease(attributed);
-	CFRelease(string);
 }
 
 - (void)viewDidChangeBackingProperties
