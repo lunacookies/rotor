@@ -11,18 +11,18 @@ struct Box
 	V2 texture_size;
 };
 
-typedef struct RasterizationResult RasterizationResult;
-struct RasterizationResult
+typedef struct BoxArray BoxArray;
+struct BoxArray
 {
 	Box *boxes;
-	U64 box_count;
+	U64 count;
+	U64 capacity;
 };
 
-function RasterizationResult
-RasterizeLine(Arena *arena, String8 text, GlyphAtlas *glyph_atlas, CTFontRef font)
+function void
+RasterizeLine(
+        Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph_atlas, CTFontRef font)
 {
-	RasterizationResult result = { 0 };
-
 	CFStringRef string = CFStringCreateWithBytes(
 	        kCFAllocatorDefault, text.data, (CFIndex)text.count, kCFStringEncodingUTF8, 0);
 
@@ -33,8 +33,10 @@ RasterizeLine(Arena *arena, String8 text, GlyphAtlas *glyph_atlas, CTFontRef fon
 	        CFAttributedStringCreate(kCFAllocatorDefault, string, attributes);
 	CTLineRef line = CTLineCreateWithAttributedString(attributed);
 
-	result.box_count = (U64)CTLineGetGlyphCount(line);
-	result.boxes = PushArray(arena, Box, result.box_count);
+	U64 glyph_count = (U64)CTLineGetGlyphCount(line);
+	Assert(box_array->count + glyph_count <= box_array->capacity);
+	Box *boxes = box_array->boxes + box_array->count;
+	box_array->count += glyph_count;
 
 	CFArrayRef runs = CTLineGetGlyphRuns(line);
 	U64 run_count = (U64)CFArrayGetCount(runs);
@@ -71,18 +73,18 @@ RasterizeLine(Arena *arena, String8 text, GlyphAtlas *glyph_atlas, CTFontRef fon
 			CGGlyph glyph = glyphs[j];
 			GlyphAtlasSlot *slot = GlyphAtlasGet(glyph_atlas, run_font, glyph);
 
-			result.boxes[glyph_index].origin.x = (F32)glyph_positions[j].x;
-			result.boxes[glyph_index].origin.y =
+			boxes[glyph_index].origin.x = (F32)glyph_positions[j].x;
+			boxes[glyph_index].origin.y =
 			        (F32)glyph_positions[j].y - slot->baseline + 100;
 
-			result.boxes[glyph_index].size.x = slot->width;
-			result.boxes[glyph_index].size.y = slot->height;
+			boxes[glyph_index].size.x = slot->width;
+			boxes[glyph_index].size.y = slot->height;
 
-			result.boxes[glyph_index].texture_origin.x = slot->x;
-			result.boxes[glyph_index].texture_origin.y = slot->y;
+			boxes[glyph_index].texture_origin.x = slot->x;
+			boxes[glyph_index].texture_origin.y = slot->y;
 
-			result.boxes[glyph_index].texture_size.x = slot->width;
-			result.boxes[glyph_index].texture_size.y = slot->height;
+			boxes[glyph_index].texture_size.x = slot->width;
+			boxes[glyph_index].texture_size.y = slot->height;
 
 			glyph_index++;
 		}
@@ -91,8 +93,6 @@ RasterizeLine(Arena *arena, String8 text, GlyphAtlas *glyph_atlas, CTFontRef fon
 	CFRelease(line);
 	CFRelease(attributed);
 	CFRelease(string);
-
-	return result;
 }
 
 @implementation MainView
@@ -197,12 +197,13 @@ CTFontRef font;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
+	BoxArray box_array = { 0 };
+	box_array.capacity = 1024;
+	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
+
 	String8 text = Str8Lit("hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵");
-	RasterizationResult rasterization_result =
-	        RasterizeLine(frame_arena, text, &glyph_atlas, font);
-	[encoder setVertexBytes:rasterization_result.boxes
-	                 length:rasterization_result.box_count * sizeof(Box)
-	                atIndex:1];
+	RasterizeLine(frame_arena, &box_array, text, &glyph_atlas, font);
+	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
 
 	V2 texture_bounds = { 0 };
 	texture_bounds.x = 1024;
@@ -224,7 +225,7 @@ CTFontRef font;
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
 	            vertexStart:0
 	            vertexCount:6
-	          instanceCount:rasterization_result.box_count];
+	          instanceCount:box_array.count];
 	[encoder endEncoding];
 
 	[command_buffer presentDrawable:drawable];
