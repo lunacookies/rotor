@@ -5,6 +5,7 @@ MainView () <CALayerDelegate>
 typedef struct Box Box;
 struct Box
 {
+	V3 color;
 	V2 origin;
 	V2 size;
 	V2 texture_origin;
@@ -20,8 +21,8 @@ struct BoxArray
 };
 
 function void
-RasterizeLine(
-        Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph_atlas, CTFontRef font)
+RasterizeLine(Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph_atlas,
+        CTFontRef font, V3 color)
 {
 	CFStringRef string = CFStringCreateWithBytes(
 	        kCFAllocatorDefault, text.data, (CFIndex)text.count, kCFStringEncodingUTF8, 0);
@@ -72,6 +73,8 @@ RasterizeLine(
 		{
 			CGGlyph glyph = glyphs[j];
 			GlyphAtlasSlot *slot = GlyphAtlasGet(glyph_atlas, run_font, glyph);
+
+			boxes[glyph_index].color = color;
 
 			boxes[glyph_index].origin.x = (F32)glyph_positions[j].x;
 			boxes[glyph_index].origin.y =
@@ -201,14 +204,20 @@ CTFontRef font;
 	box_array.capacity = 1024;
 	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
 
+	box_array.boxes[0].color.g = 1;
 	box_array.boxes[0].origin.x = 10;
 	box_array.boxes[0].origin.y = 10;
 	box_array.boxes[0].size.x = 50;
 	box_array.boxes[0].size.y = 50;
 	box_array.count++;
 
+	V3 color = { 0 };
+	color.r = 0.5;
+	color.g = 0.5;
+	color.b = 1;
+
 	String8 text = Str8Lit("hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵");
-	RasterizeLine(frame_arena, &box_array, text, &glyph_atlas, font);
+	RasterizeLine(frame_arena, &box_array, text, &glyph_atlas, font, color);
 	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
 
 	V2 texture_bounds = { 0 };
@@ -220,12 +229,6 @@ CTFontRef font;
 	bounds.x = (F32)self.bounds.size.width;
 	bounds.y = (F32)self.bounds.size.height;
 	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:3];
-
-	V3 color = { 0 };
-	color.r = 0.5;
-	color.g = 0.5;
-	color.b = 1;
-	[encoder setFragmentBytes:&color length:sizeof(color) atIndex:0];
 
 	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle

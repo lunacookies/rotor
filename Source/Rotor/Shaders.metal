@@ -24,6 +24,7 @@ typedef float4 V4;
 
 struct Box
 {
+	V3 color;
 	V2 origin;
 	V2 size;
 	V2 texture_origin;
@@ -33,6 +34,7 @@ struct Box
 struct RasterizerData
 {
 	V4 position [[position]];
+	V3 color;
 	V2 texture_coordinates;
 	B32 untextured;
 };
@@ -57,21 +59,21 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	        result.texture_coordinates * (box.texture_size / *texture_bounds) +
 	        (box.texture_origin / *texture_bounds);
 
+	result.color = box.color;
 	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
 
 	return result;
 }
 
 fragment V4
-FragmentShader(
-        RasterizerData data [[stage_in]], constant V3 *color, metal::texture2d<F32> glyph_atlas)
+FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atlas)
 {
 	if (data.untextured)
 	{
-		return V4(*color, 1);
+		return V4(data.color, 1);
 	}
 
 	metal::sampler glyph_atlas_sampler(metal::mag_filter::linear, metal::min_filter::linear);
 	F32 sample = glyph_atlas.sample(glyph_atlas_sampler, data.texture_coordinates).a;
-	return sample * V4(*color, 1);
+	return sample * V4(data.color, 1);
 }
