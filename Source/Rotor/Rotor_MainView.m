@@ -197,7 +197,7 @@ CTFontRef font;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	String8 text = String8Lit("hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵");
+	String8 text = Str8Lit("hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵");
 	RasterizationResult rasterization_result =
 	        RasterizeLine(frame_arena, text, &glyph_atlas, font);
 	[encoder setVertexBytes:rasterization_result.boxes

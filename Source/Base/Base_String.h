@@ -5,4 +5,4 @@ struct String8
 	U64 count;
 };
 
-#define String8Lit(s) ((String8){ .data = (U8 *)(s), .count = sizeof(s) - 1 })
+#define Str8Lit(s) ((String8){ .data = (U8 *)(s), .count = sizeof(s) - 1 })
