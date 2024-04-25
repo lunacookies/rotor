@@ -14,7 +14,7 @@ plutil -convert binary1 Products/Rotor.app/Contents/Info.plist
 
 clang -o Products/Rotor.app/Contents/MacOS/Rotor \
 	-I Source \
-	-fobjc-arc -framework Cocoa -framework Metal -framework QuartzCore \
+	-fmodules -fobjc-arc \
 	-g3 \
 	-ftrivial-auto-var-init=zero -fwrapv -fsanitize=undefined -fshort-enums \
 	-W \

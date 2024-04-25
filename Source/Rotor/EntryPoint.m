@@ -1,8 +1,7 @@
-#import <Cocoa/Cocoa.h>
-#import <Metal/Metal.h>
-#import <QuartzCore/QuartzCore.h>
-#import <os/log.h>
-#import <simd/simd.h>
+@import Cocoa;
+@import Metal;
+@import QuartzCore;
+@import simd;
 
 #include "Base/Base_Include.h"
 #include "OS/OS_Include.h"
