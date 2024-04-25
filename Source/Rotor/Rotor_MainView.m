@@ -13,6 +13,9 @@ struct Box
 
 @implementation MainView
 
+Arena *permanent_arena;
+Arena *frame_arena;
+
 CAMetalLayer *metal_layer;
 id<MTLTexture> multisample_texture;
 id<MTLCommandQueue> command_queue;
@@ -29,11 +32,11 @@ Box *boxes;
 	self.wantsLayer = YES;
 	self.layer = [CAMetalLayer layer];
 	metal_layer = (CAMetalLayer *)self.layer;
+	permanent_arena = ArenaAlloc();
+	frame_arena = ArenaAlloc();
 
 	metal_layer.delegate = self;
-
 	metal_layer.device = MTLCreateSystemDefaultDevice();
-
 	command_queue = [metal_layer.device newCommandQueue];
 
 	NSError *error = nil;
@@ -79,6 +82,7 @@ Box *boxes;
 
 - (void)displayLayer:(CALayer *)layer
 {
+	ArenaClear(frame_arena);
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
 	id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
@@ -122,7 +126,7 @@ Box *boxes;
 	CTLineRef line = CTLineCreateWithAttributedString(attributed);
 	U64 glyph_count = (U64)CTLineGetGlyphCount(line);
 
-	boxes = calloc(glyph_count, sizeof(Box));
+	boxes = PushArray(frame_arena, Box, glyph_count);
 
 	CFArrayRef runs = CTLineGetGlyphRuns(line);
 	U64 run_count = (U64)CFArrayGetCount(runs);
@@ -137,20 +141,20 @@ Box *boxes;
 		CFDictionaryRef run_attributes = CTRunGetAttributes(run);
 		const void *run_font_raw =
 		        CFDictionaryGetValue(run_attributes, kCTFontAttributeName);
-		assert(run_font_raw != NULL);
+		Assert(run_font_raw != NULL);
 
 		// Ensure we actually have a CTFont instance.
 		CFTypeID ct_font_type_id = CTFontGetTypeID();
 		CFTypeID run_font_attribute_type_id = CFGetTypeID(run_font_raw);
-		assert(ct_font_type_id == run_font_attribute_type_id);
+		Assert(ct_font_type_id == run_font_attribute_type_id);
 
 		CTFontRef run_font = run_font_raw;
 
 		CFRange range = { 0 };
 		range.length = (CFIndex)run_glyph_count;
 
-		CGGlyph *glyphs = calloc(run_glyph_count, sizeof(CGGlyph));
-		CGPoint *glyph_positions = calloc(run_glyph_count, sizeof(CGPoint));
+		CGGlyph *glyphs = PushArray(frame_arena, CGGlyph, run_glyph_count);
+		CGPoint *glyph_positions = PushArray(frame_arena, CGPoint, run_glyph_count);
 		CTRunGetGlyphs(run, range, glyphs);
 		CTRunGetPositions(run, range, glyph_positions);
 
@@ -174,9 +178,6 @@ Box *boxes;
 
 			glyph_index++;
 		}
-
-		free(glyphs);
-		free(glyph_positions);
 	}
 
 	[encoder setVertexBytes:boxes length:glyph_count * sizeof(Box) atIndex:1];
@@ -210,7 +211,6 @@ Box *boxes;
 	CFRelease(line);
 	CFRelease(attributed);
 	CFRelease(string);
-	free(boxes);
 }
 
 - (void)viewDidChangeBackingProperties
@@ -219,7 +219,7 @@ Box *boxes;
 
 	F32 scale_factor = (F32)self.window.backingScaleFactor;
 
-	GlyphAtlasInit(&glyph_atlas, metal_layer.device, scale_factor);
+	GlyphAtlasInit(&glyph_atlas, permanent_arena, metal_layer.device, scale_factor);
 
 	metal_layer.contentsScale = self.window.backingScaleFactor;
 	[self updateMultisampleTexture];

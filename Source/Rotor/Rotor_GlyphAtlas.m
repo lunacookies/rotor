@@ -5,7 +5,7 @@ enum
 };
 
 function void
-GlyphAtlasInit(GlyphAtlas *atlas, id<MTLDevice> device, F32 scale_factor)
+GlyphAtlasInit(GlyphAtlas *atlas, Arena *arena, id<MTLDevice> device, F32 scale_factor)
 {
 	atlas->width = 1024;
 	atlas->height = 1024;
@@ -13,7 +13,7 @@ GlyphAtlasInit(GlyphAtlas *atlas, id<MTLDevice> device, F32 scale_factor)
 	atlas->width_pixels = (U64)CeilF32(atlas->width * scale_factor);
 	atlas->height_pixels = (U64)CeilF32(atlas->height * scale_factor);
 
-	atlas->pixels = calloc(atlas->width_pixels * atlas->height_pixels, sizeof(U32));
+	atlas->pixels = PushArray(arena, U32, atlas->width_pixels * atlas->height_pixels);
 	CGColorSpaceRef colorspace = CGColorSpaceCreateWithName(kCGColorSpaceLinearGray);
 	atlas->context = CGBitmapContextCreate(atlas->pixels, atlas->width_pixels,
 	        atlas->height_pixels, 8, atlas->width_pixels, colorspace, kCGImageAlphaOnly);
@@ -26,7 +26,7 @@ GlyphAtlasInit(GlyphAtlas *atlas, id<MTLDevice> device, F32 scale_factor)
 	atlas->texture = [device newTextureWithDescriptor:descriptor];
 
 	atlas->slot_count = 1 << 16;
-	atlas->slots = calloc(atlas->slot_count, sizeof(GlyphAtlasSlot));
+	atlas->slots = PushArray(arena, GlyphAtlasSlot, atlas->slot_count);
 }
 
 function void

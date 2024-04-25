@@ -30,5 +30,6 @@ struct GlyphAtlas
 	U64 tallest_this_row;
 };
 
-function void GlyphAtlasInit(GlyphAtlas *atlas, id<MTLDevice> device, F32 scale_factor);
+function void GlyphAtlasInit(
+        GlyphAtlas *atlas, Arena *arena, id<MTLDevice> device, F32 scale_factor);
 function GlyphAtlasSlot *GlyphAtlasGet(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph);

@@ -5,10 +5,12 @@
 #import <simd/simd.h>
 
 #include "Base/Base_Include.h"
-
+#include "OS/OS_Include.h"
 #include "Rotor_GlyphAtlas.h"
 #include "Rotor_MainView.h"
 
+#include "Base/Base_Include.c"
+#include "OS/OS_Include.c"
 #include "Rotor_GlyphAtlas.m"
 #include "Rotor_MainView.m"
 

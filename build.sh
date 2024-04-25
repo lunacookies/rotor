@@ -2,7 +2,7 @@
 
 set -e
 
-clang-format -i Source/**/*.h Source/**/*.m Source/**/*.metal
+clang-format -i Source/**/*.c Source/**/*.h Source/**/*.m Source/**/*.metal
 
 rm -rf Products
 mkdir -p Products/Rotor.app/Contents
