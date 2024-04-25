@@ -28,7 +28,7 @@ RasterizeLine(Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph
 	        kCFAllocatorDefault, text.data, (CFIndex)text.count, kCFStringEncodingUTF8, 0);
 
 	CFDictionaryRef attributes = (__bridge CFDictionaryRef)
-	        @{ (__bridge NSString *)kCTFontAttributeName : (__bridge NSFont *)font };
+	        @{(__bridge NSString *)kCTFontAttributeName : (__bridge NSFont *)font};
 
 	CFAttributedStringRef attributed =
 	        CFAttributedStringCreate(kCFAllocatorDefault, string, attributes);
@@ -61,7 +61,7 @@ RasterizeLine(Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph
 
 		CTFontRef run_font = run_font_raw;
 
-		CFRange range = { 0 };
+		CFRange range = {0};
 		range.length = (CFIndex)run_glyph_count;
 
 		CGGlyph *glyphs = PushArray(arena, CGGlyph, run_glyph_count);
@@ -190,17 +190,17 @@ CTFontRef font;
 	[encoder setRenderPipelineState:pipeline_state];
 
 	local_persist V2 positions[] = {
-		{ -1, 1 },
-		{ -1, -1 },
-		{ 1, 1 },
-		{ 1, 1 },
-		{ 1, -1 },
-		{ -1, -1 },
+	        {-1, 1},
+	        {-1, -1},
+	        {1, 1},
+	        {1, 1},
+	        {1, -1},
+	        {-1, -1},
 	};
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	BoxArray box_array = { 0 };
+	BoxArray box_array = {0};
 	box_array.capacity = 1024;
 	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
 
@@ -211,7 +211,7 @@ CTFontRef font;
 	box_array.boxes[0].size.y = 50;
 	box_array.count++;
 
-	V3 color = { 0 };
+	V3 color = {0};
 	color.r = 0.5;
 	color.g = 0.5;
 	color.b = 1;
@@ -220,12 +220,12 @@ CTFontRef font;
 	RasterizeLine(frame_arena, &box_array, text, &glyph_atlas, font, color);
 	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
 
-	V2 texture_bounds = { 0 };
+	V2 texture_bounds = {0};
 	texture_bounds.x = 1024;
 	texture_bounds.y = 1024;
 	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:2];
 
-	V2 bounds = { 0 };
+	V2 bounds = {0};
 	bounds.x = (F32)self.bounds.size.width;
 	bounds.y = (F32)self.bounds.size.height;
 	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:3];

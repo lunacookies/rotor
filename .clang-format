@@ -9,6 +9,5 @@ AlwaysBreakAfterDefinitionReturnType: All
 BreakBeforeBraces: Allman
 ColumnLimit: 100
 ContinuationIndentWidth: 8
-Cpp11BracedListStyle: false
 IndentWidth: 8
 UseTab: ForIndentation

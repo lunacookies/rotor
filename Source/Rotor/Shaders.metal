@@ -50,7 +50,7 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	origin_ndc.y *= -1;
 	V2 scale = box.size / *bounds;
 
-	RasterizerData result = { 0 };
+	RasterizerData result = {0};
 	result.position = V4(position * scale + origin_ndc, 0, 1);
 
 	result.texture_coordinates = (position + 1) / 2;
