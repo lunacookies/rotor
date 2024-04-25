@@ -34,6 +34,7 @@ struct RasterizerData
 {
 	V4 position [[position]];
 	V2 texture_coordinates;
+	B32 untextured;
 };
 
 vertex RasterizerData
@@ -56,6 +57,8 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	        result.texture_coordinates * (box.texture_size / *texture_bounds) +
 	        (box.texture_origin / *texture_bounds);
 
+	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
+
 	return result;
 }
 
@@ -63,6 +66,11 @@ fragment V4
 FragmentShader(
         RasterizerData data [[stage_in]], constant V3 *color, metal::texture2d<F32> glyph_atlas)
 {
+	if (data.untextured)
+	{
+		return V4(*color, 1);
+	}
+
 	metal::sampler glyph_atlas_sampler(metal::mag_filter::linear, metal::min_filter::linear);
 	F32 sample = glyph_atlas.sample(glyph_atlas_sampler, data.texture_coordinates).a;
 	return sample * V4(*color, 1);

@@ -201,6 +201,12 @@ CTFontRef font;
 	box_array.capacity = 1024;
 	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
 
+	box_array.boxes[0].origin.x = 10;
+	box_array.boxes[0].origin.y = 10;
+	box_array.boxes[0].size.x = 50;
+	box_array.boxes[0].size.y = 50;
+	box_array.count++;
+
 	String8 text = Str8Lit("hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵");
 	RasterizeLine(frame_arena, &box_array, text, &glyph_atlas, font);
 	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
