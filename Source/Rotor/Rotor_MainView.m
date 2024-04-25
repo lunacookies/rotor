@@ -19,12 +19,12 @@ struct RasterizationResult
 };
 
 function RasterizationResult
-RasterizeLine(Arena *arena, char *text, GlyphAtlas *glyph_atlas, CTFontRef font)
+RasterizeLine(Arena *arena, String8 text, GlyphAtlas *glyph_atlas, CTFontRef font)
 {
 	RasterizationResult result = { 0 };
 
-	CFStringRef string =
-	        CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
+	CFStringRef string = CFStringCreateWithBytes(
+	        kCFAllocatorDefault, text.data, (CFIndex)text.count, kCFStringEncodingUTF8, 0);
 
 	CFDictionaryRef attributes = (__bridge CFDictionaryRef)
 	        @{ (__bridge NSString *)kCTFontAttributeName : (__bridge NSFont *)font };
@@ -197,7 +197,7 @@ CTFontRef font;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	char *text = "hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵";
+	String8 text = String8Lit("hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵");
 	RasterizationResult rasterization_result =
 	        RasterizeLine(frame_arena, text, &glyph_atlas, font);
 	[encoder setVertexBytes:rasterization_result.boxes
