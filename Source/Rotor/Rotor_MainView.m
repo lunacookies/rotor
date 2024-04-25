@@ -5,10 +5,10 @@ MainView () <CALayerDelegate>
 typedef struct Box Box;
 struct Box
 {
-	simd_float2 origin;
-	simd_float2 size;
-	simd_float2 texture_origin;
-	simd_float2 texture_size;
+	V2 origin;
+	V2 size;
+	V2 texture_origin;
+	V2 texture_size;
 };
 
 typedef struct RasterizationResult RasterizationResult;
@@ -186,7 +186,7 @@ CTFontRef font;
 
 	[encoder setRenderPipelineState:pipeline_state];
 
-	local_persist simd_float2 positions[] = {
+	local_persist V2 positions[] = {
 		{ -1, 1 },
 		{ -1, -1 },
 		{ 1, 1 },
@@ -204,17 +204,17 @@ CTFontRef font;
 	                 length:rasterization_result.box_count * sizeof(Box)
 	                atIndex:1];
 
-	simd_float2 texture_bounds = { 0 };
+	V2 texture_bounds = { 0 };
 	texture_bounds.x = 1024;
 	texture_bounds.y = 1024;
 	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:2];
 
-	simd_float2 bounds = { 0 };
+	V2 bounds = { 0 };
 	bounds.x = (F32)self.bounds.size.width;
 	bounds.y = (F32)self.bounds.size.height;
 	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:3];
 
-	simd_float3 color = { 0 };
+	V3 color = { 0 };
 	color.r = 0.5;
 	color.g = 0.5;
 	color.b = 1;

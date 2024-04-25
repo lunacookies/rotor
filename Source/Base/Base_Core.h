@@ -18,6 +18,33 @@ typedef S16 B16;
 typedef S32 B32;
 typedef S64 B64;
 
+typedef union V2 V2;
+union __attribute((aligned(8))) V2
+{
+	struct
+	{
+		F32 x;
+		F32 y;
+	};
+};
+
+typedef union V3 V3;
+union __attribute((aligned(16))) V3
+{
+	struct
+	{
+		F32 x;
+		F32 y;
+		F32 z;
+	};
+	struct
+	{
+		F32 r;
+		F32 g;
+		F32 b;
+	};
+};
+
 #define function static
 #define local_persist static
 
