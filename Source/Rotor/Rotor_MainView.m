@@ -8,6 +8,7 @@ struct View
 	View *next;
 	V2 origin;
 	V2 size;
+	V2 padding;
 	B32 pressed;
 	String8 string;
 };
@@ -186,6 +187,8 @@ V2 button_size;
 	button1->origin.y = 100;
 	button1->size.x = 50;
 	button1->size.y = 20;
+	button1->padding.x = 10;
+	button1->padding.y = 2;
 	button1->string = Str8Lit("hello tt fi world 👋");
 
 	View *button2 = PushStruct(permanent_arena, View);
@@ -193,6 +196,8 @@ V2 button_size;
 	button2->origin.y = 300;
 	button2->size.x = 100;
 	button2->size.y = 40;
+	button2->padding.x = 15;
+	button2->padding.y = 5;
 	button2->string = Str8Lit("“no.” “no”. WAVE Te");
 	button2->next = button1;
 
@@ -201,6 +206,8 @@ V2 button_size;
 	button3->origin.y = 10;
 	button3->size.x = 50;
 	button3->size.y = 50;
+	button3->padding.x = 10;
+	button3->padding.y = 20;
 	button3->string = Str8Lit("𝕏ⓘ⁵");
 	button3->next = button2;
 
@@ -257,6 +264,8 @@ V2 button_size;
 		RasterizeLine(frame_arena, &rasterized_line, view->string, &glyph_atlas, font);
 
 		view->size = rasterized_line.bounds;
+		view->size.x += view->padding.x * 2;
+		view->size.y += view->padding.y * 2;
 
 		bg_box->origin = view->origin;
 		bg_box->size = view->size;
@@ -265,6 +274,8 @@ V2 button_size;
 		bg_box->color.b = MixF32(1, 0, (F32)view->pressed);
 
 		V2 text_origin = view->origin;
+		text_origin.x += view->padding.x;
+		text_origin.y += view->padding.y;
 		text_origin.y += (rasterized_line.bounds.y + (F32)CTFontGetCapHeight(font)) * 0.5f;
 
 		for (U64 glyph_index = 0; glyph_index < rasterized_line.glyph_count; glyph_index++)
