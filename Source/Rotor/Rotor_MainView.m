@@ -263,9 +263,8 @@ V2 button_size;
 		RasterizedLine rasterized_line = {0};
 		RasterizeLine(frame_arena, &rasterized_line, view->string, &glyph_atlas, font);
 
-		view->size = rasterized_line.bounds;
-		view->size.x += view->padding.x * 2;
-		view->size.y += view->padding.y * 2;
+		view->size.x = RoundF32(rasterized_line.bounds.x) + view->padding.x * 2;
+		view->size.y = RoundF32(rasterized_line.bounds.y) + view->padding.y * 2;
 
 		bg_box->origin = view->origin;
 		bg_box->size = view->size;
