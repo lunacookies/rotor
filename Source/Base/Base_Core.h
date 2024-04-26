@@ -28,6 +28,16 @@ union __attribute((aligned(8))) V2
 	};
 };
 
+typedef union V2U64 V2U64;
+union V2U64
+{
+	struct
+	{
+		U64 x;
+		U64 y;
+	};
+};
+
 typedef union V3 V3;
 union __attribute((aligned(16))) V3
 {

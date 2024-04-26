@@ -1,27 +1,23 @@
-enum
-{
-	GlyphAtlasPaddingX = 2,
-	GlyphAtlasPaddingY = 2,
-};
+const V2U64 glyph_atlas_padding = {2, 2};
 
 function void
 GlyphAtlasInit(GlyphAtlas *atlas, Arena *arena, id<MTLDevice> device, F32 scale_factor)
 {
-	atlas->width = 1024;
-	atlas->height = 1024;
+	atlas->size.x = 1024;
+	atlas->size.y = 1024;
 
-	atlas->width_pixels = (U64)CeilF32(atlas->width * scale_factor);
-	atlas->height_pixels = (U64)CeilF32(atlas->height * scale_factor);
+	atlas->size_pixels.x = (U64)CeilF32(atlas->size.x * scale_factor);
+	atlas->size_pixels.y = (U64)CeilF32(atlas->size.y * scale_factor);
 
-	atlas->pixels = PushArray(arena, U32, atlas->width_pixels * atlas->height_pixels);
+	atlas->pixels = PushArray(arena, U32, atlas->size_pixels.x * atlas->size_pixels.y);
 	CGColorSpaceRef colorspace = CGColorSpaceCreateWithName(kCGColorSpaceLinearGray);
-	atlas->context = CGBitmapContextCreate(atlas->pixels, atlas->width_pixels,
-	        atlas->height_pixels, 8, atlas->width_pixels, colorspace, kCGImageAlphaOnly);
+	atlas->context = CGBitmapContextCreate(atlas->pixels, atlas->size_pixels.x,
+	        atlas->size_pixels.y, 8, atlas->size_pixels.x, colorspace, kCGImageAlphaOnly);
 	CGContextScaleCTM(atlas->context, scale_factor, scale_factor);
 
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
-	descriptor.width = atlas->width_pixels;
-	descriptor.height = atlas->height_pixels;
+	descriptor.width = atlas->size_pixels.x;
+	descriptor.height = atlas->size_pixels.y;
 	descriptor.pixelFormat = MTLPixelFormatA8Unorm;
 	atlas->texture = [device newTextureWithDescriptor:descriptor];
 
@@ -41,50 +37,49 @@ GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *
 	CGRect bounding_rect;
 	CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationDefault, &glyph, &bounding_rect, 1);
 
-	U64 glyph_width = (U64)CeilF64(bounding_rect.size.width);
-	U64 glyph_height = (U64)CeilF64(bounding_rect.size.height);
+	V2U64 glyph_size = {0};
+	glyph_size.x = (U64)CeilF64(bounding_rect.size.width);
+	glyph_size.y = (U64)CeilF64(bounding_rect.size.height);
 	F64 glyph_baseline = bounding_rect.size.height + bounding_rect.origin.y;
 
-	U64 x_step = glyph_width + GlyphAtlasPaddingX;
-	U64 y_step = atlas->tallest_this_row + GlyphAtlasPaddingY;
+	U64 x_step = glyph_size.x + glyph_atlas_padding.x;
 
-	U64 remaining_x_in_row = atlas->width - atlas->current_row_x;
+	U64 remaining_x_in_row = atlas->size.x - atlas->current_row.x;
 	if (remaining_x_in_row < x_step)
 	{
-		atlas->current_row_y += y_step;
+		U64 y_step = atlas->tallest_this_row + glyph_atlas_padding.y;
+		atlas->current_row.y += y_step;
 		atlas->tallest_this_row = 0;
-		atlas->current_row_x = 0;
+		atlas->current_row.x = 0;
 	}
 
 	CFRetain(font);
 	slot->font = font;
 	slot->glyph = glyph;
-	slot->x = atlas->current_row_x;
-	slot->y = atlas->current_row_y;
-	slot->width = glyph_width;
-	slot->height = glyph_height;
+	slot->origin = atlas->current_row;
+	slot->size = glyph_size;
 	slot->baseline = (U64)glyph_baseline;
 
 	CGPoint position = {0};
-	position.x = atlas->current_row_x - bounding_rect.origin.x + 0.5;
-	position.y = atlas->height - (atlas->current_row_y + glyph_baseline + 0.5);
+	position.x = atlas->current_row.x - bounding_rect.origin.x + 0.5;
+	position.y = atlas->size.y - (atlas->current_row.y + glyph_baseline + 0.5);
 
 	CGRect rect = {0};
-	rect.origin.x = atlas->current_row_x;
-	rect.origin.y = atlas->height - (atlas->current_row_y + glyph_height);
-	rect.size.width = glyph_width;
-	rect.size.height = glyph_height;
+	rect.origin.x = atlas->current_row.x;
+	rect.origin.y = atlas->size.y - (atlas->current_row.y + glyph_size.y);
+	rect.size.width = glyph_size.x;
+	rect.size.height = glyph_size.y;
 
 	CTFontDrawGlyphs(font, &glyph, &position, 1, atlas->context);
 
-	atlas->current_row_x += x_step;
-	atlas->tallest_this_row = Max(atlas->tallest_this_row, glyph_height);
+	atlas->current_row.x += x_step;
+	atlas->tallest_this_row = Max(atlas->tallest_this_row, glyph_size.y);
 
 	[atlas->texture
-	        replaceRegion:MTLRegionMake2D(0, 0, atlas->width_pixels, atlas->height_pixels)
+	        replaceRegion:MTLRegionMake2D(0, 0, atlas->size_pixels.x, atlas->size_pixels.y)
 	          mipmapLevel:0
 	            withBytes:atlas->pixels
-	          bytesPerRow:atlas->width_pixels];
+	          bytesPerRow:atlas->size_pixels.x];
 }
 
 function GlyphAtlasSlot *

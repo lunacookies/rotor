@@ -3,20 +3,16 @@ struct GlyphAtlasSlot
 {
 	CTFontRef font;
 	CGGlyph glyph;
-	U64 x;
-	U64 y;
-	U64 width;
-	U64 height;
+	V2U64 origin;
+	V2U64 size;
 	U64 baseline;
 };
 
 typedef struct GlyphAtlas GlyphAtlas;
 struct GlyphAtlas
 {
-	U64 width;
-	U64 height;
-	U64 width_pixels;
-	U64 height_pixels;
+	V2U64 size;
+	V2U64 size_pixels;
 	U32 *pixels;
 	CGContextRef context;
 	id<MTLTexture> texture;
@@ -25,8 +21,7 @@ struct GlyphAtlas
 	U64 slot_count; // must always be power of two
 	U64 used_slot_count;
 
-	U64 current_row_x;
-	U64 current_row_y;
+	V2U64 current_row;
 	U64 tallest_this_row;
 };
 

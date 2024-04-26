@@ -280,12 +280,12 @@ V2 button_size;
 			Assert(box_array.count <= box_array.capacity);
 
 			box->origin = position;
-			box->texture_origin.x = slot->x;
-			box->texture_origin.y = slot->y;
-			box->size.x = slot->width;
-			box->size.y = slot->height;
-			box->texture_size.x = slot->width;
-			box->texture_size.y = slot->height;
+			box->texture_origin.x = slot->origin.x;
+			box->texture_origin.y = slot->origin.y;
+			box->size.x = slot->size.x;
+			box->size.y = slot->size.y;
+			box->texture_size.x = slot->size.x;
+			box->texture_size.y = slot->size.y;
 
 			if (!view->pressed)
 			{
