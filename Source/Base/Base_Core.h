@@ -54,6 +54,8 @@ union __attribute((aligned(16))) V3
 #define CeilF32 ceilf
 #define CeilF64 ceil
 
+function F32 MixF32(F32 x, F32 y, F32 a);
+
 #define Kibibytes(n) ((U64)1024 * (n))
 #define Mebibytes(n) ((U64)1024 * Kibibytes(n))
 #define Gibibytes(n) ((U64)1024 * Mebibytes(n))

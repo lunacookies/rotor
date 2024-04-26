@@ -2,6 +2,15 @@
 MainView () <CALayerDelegate>
 @end
 
+typedef struct View View;
+struct View
+{
+	View *next;
+	V2 origin;
+	V2 size;
+	B32 pressed;
+};
+
 typedef struct Box Box;
 struct Box
 {
@@ -113,6 +122,11 @@ CVDisplayLinkRef display_link;
 GlyphAtlas glyph_atlas;
 CTFontRef font;
 
+View *views;
+B32 button_pressed;
+V2 button_origin;
+V2 button_size;
+
 - (instancetype)initWithFrame:(NSRect)frame
 {
 	self = [super initWithFrame:frame];
@@ -163,6 +177,21 @@ CTFontRef font;
 	F32 font_size = 50;
 	font = (__bridge CTFontRef)[NSFont systemFontOfSize:font_size weight:NSFontWeightRegular];
 
+	View *button1 = PushStruct(permanent_arena, View);
+	button1->origin.x = 100;
+	button1->origin.y = 100;
+	button1->size.x = 50;
+	button1->size.y = 20;
+
+	View *button2 = PushStruct(permanent_arena, View);
+	button2->origin.x = 200;
+	button2->origin.y = 300;
+	button2->size.x = 100;
+	button2->size.y = 40;
+	button2->next = button1;
+
+	views = button2;
+
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
 	CVDisplayLinkStart(display_link);
@@ -173,6 +202,7 @@ CTFontRef font;
 - (void)displayLayer:(CALayer *)layer
 {
 	ArenaClear(frame_arena);
+
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
 	id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
@@ -204,12 +234,17 @@ CTFontRef font;
 	box_array.capacity = 1024;
 	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
 
-	box_array.boxes[0].color.g = 1;
-	box_array.boxes[0].origin.x = 10;
-	box_array.boxes[0].origin.y = 10;
-	box_array.boxes[0].size.x = 50;
-	box_array.boxes[0].size.y = 50;
-	box_array.count++;
+	for (View *view = views; view != 0; view = view->next)
+	{
+		Box *box = box_array.boxes + box_array.count;
+		box_array.count++;
+
+		box->origin = view->origin;
+		box->size = view->size;
+		box->color.r = MixF32(1, 0, (F32)view->pressed);
+		box->color.g = MixF32(0, 1, (F32)view->pressed);
+		box->color.b = MixF32(1, 0, (F32)view->pressed);
+	}
 
 	V3 color = {0};
 	color.r = 0.5;
@@ -293,6 +328,27 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	  [view.layer setNeedsDisplay];
 	});
 	return kCVReturnSuccess;
+}
+
+- (void)mouseDown:(NSEvent *)event
+{
+	NSPoint location = event.locationInWindow;
+	location.y = self.bounds.size.height - location.y;
+
+	for (View *view = views; view != 0; view = view->next)
+	{
+		view->pressed = location.x >= view->origin.x && location.y >= view->origin.y &&
+		                location.x <= view->origin.x + view->size.x &&
+		                location.y <= view->origin.y + view->size.y;
+	}
+}
+
+- (void)mouseUp:(NSEvent *)event
+{
+	for (View *view = views; view != 0; view = view->next)
+	{
+		view->pressed = 0;
+	}
 }
 
 @end
