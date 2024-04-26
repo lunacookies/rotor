@@ -9,6 +9,7 @@ struct View
 	V2 origin;
 	V2 size;
 	B32 pressed;
+	String8 string;
 };
 
 typedef struct Box Box;
@@ -29,9 +30,18 @@ struct BoxArray
 	U64 capacity;
 };
 
+typedef struct RasterizedLine RasterizedLine;
+struct RasterizedLine
+{
+	V2 bounds;
+	U64 glyph_count;
+	V2 *positions;
+	GlyphAtlasSlot **slots;
+};
+
 function void
-RasterizeLine(Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph_atlas,
-        CTFontRef font, V3 color)
+RasterizeLine(
+        Arena *arena, RasterizedLine *result, String8 text, GlyphAtlas *glyph_atlas, CTFontRef font)
 {
 	CFStringRef string = CFStringCreateWithBytes(
 	        kCFAllocatorDefault, text.data, (CFIndex)text.count, kCFStringEncodingUTF8, 0);
@@ -43,14 +53,17 @@ RasterizeLine(Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph
 	        CFAttributedStringCreate(kCFAllocatorDefault, string, attributes);
 	CTLineRef line = CTLineCreateWithAttributedString(attributed);
 
-	U64 glyph_count = (U64)CTLineGetGlyphCount(line);
-	Assert(box_array->count + glyph_count <= box_array->capacity);
-	Box *boxes = box_array->boxes + box_array->count;
-	box_array->count += glyph_count;
+	result->glyph_count = (U64)CTLineGetGlyphCount(line);
+
+	CGRect cg_bounds = CTLineGetBoundsWithOptions(line, 0);
+	result->bounds.x = (F32)cg_bounds.size.width;
+	result->bounds.y = (F32)cg_bounds.size.height;
+
+	result->positions = PushArray(arena, V2, result->glyph_count);
+	result->slots = PushArray(arena, GlyphAtlasSlot *, result->glyph_count);
 
 	CFArrayRef runs = CTLineGetGlyphRuns(line);
 	U64 run_count = (U64)CFArrayGetCount(runs);
-
 	U64 glyph_index = 0;
 
 	for (U64 i = 0; i < run_count; i++)
@@ -83,20 +96,10 @@ RasterizeLine(Arena *arena, BoxArray *box_array, String8 text, GlyphAtlas *glyph
 			CGGlyph glyph = glyphs[j];
 			GlyphAtlasSlot *slot = GlyphAtlasGet(glyph_atlas, run_font, glyph);
 
-			boxes[glyph_index].color = color;
-
-			boxes[glyph_index].origin.x = (F32)glyph_positions[j].x;
-			boxes[glyph_index].origin.y =
-			        (F32)glyph_positions[j].y - slot->baseline + 100;
-
-			boxes[glyph_index].size.x = slot->width;
-			boxes[glyph_index].size.y = slot->height;
-
-			boxes[glyph_index].texture_origin.x = slot->x;
-			boxes[glyph_index].texture_origin.y = slot->y;
-
-			boxes[glyph_index].texture_size.x = slot->width;
-			boxes[glyph_index].texture_size.y = slot->height;
+			result->positions[glyph_index].x = (F32)glyph_positions[j].x;
+			result->positions[glyph_index].y =
+			        (F32)glyph_positions[j].y - slot->baseline;
+			result->slots[glyph_index] = slot;
 
 			glyph_index++;
 		}
@@ -121,6 +124,7 @@ CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
 CTFontRef font;
+CTFontRef big_font;
 
 View *views;
 B32 button_pressed;
@@ -174,23 +178,33 @@ V2 button_size;
 		abort();
 	}
 
-	F32 font_size = 50;
-	font = (__bridge CTFontRef)[NSFont systemFontOfSize:font_size weight:NSFontWeightRegular];
+	font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
+	big_font = (__bridge CTFontRef)[NSFont systemFontOfSize:50 weight:NSFontWeightRegular];
 
 	View *button1 = PushStruct(permanent_arena, View);
 	button1->origin.x = 100;
 	button1->origin.y = 100;
 	button1->size.x = 50;
 	button1->size.y = 20;
+	button1->string = Str8Lit("hello tt fi world 👋");
 
 	View *button2 = PushStruct(permanent_arena, View);
 	button2->origin.x = 200;
 	button2->origin.y = 300;
 	button2->size.x = 100;
 	button2->size.y = 40;
+	button2->string = Str8Lit("“no.” “no”. WAVE Te");
 	button2->next = button1;
 
-	views = button2;
+	View *button3 = PushStruct(permanent_arena, View);
+	button3->origin.x = 50;
+	button3->origin.y = 10;
+	button3->size.x = 50;
+	button3->size.y = 50;
+	button3->string = Str8Lit("𝕏ⓘ⁵");
+	button3->next = button2;
+
+	views = button3;
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
@@ -236,23 +250,52 @@ V2 button_size;
 
 	for (View *view = views; view != 0; view = view->next)
 	{
-		Box *box = box_array.boxes + box_array.count;
+		Box *bg_box = box_array.boxes + box_array.count;
 		box_array.count++;
 
-		box->origin = view->origin;
-		box->size = view->size;
-		box->color.r = MixF32(1, 0, (F32)view->pressed);
-		box->color.g = MixF32(0, 1, (F32)view->pressed);
-		box->color.b = MixF32(1, 0, (F32)view->pressed);
+		RasterizedLine rasterized_line = {0};
+		RasterizeLine(frame_arena, &rasterized_line, view->string, &glyph_atlas, font);
+
+		view->size = rasterized_line.bounds;
+
+		bg_box->origin = view->origin;
+		bg_box->size = view->size;
+		bg_box->color.r = MixF32(1, 0, (F32)view->pressed);
+		bg_box->color.g = MixF32(0, 1, (F32)view->pressed);
+		bg_box->color.b = MixF32(1, 0, (F32)view->pressed);
+
+		V2 text_origin = view->origin;
+		text_origin.y += (rasterized_line.bounds.y + (F32)CTFontGetCapHeight(font)) * 0.5f;
+
+		for (U64 glyph_index = 0; glyph_index < rasterized_line.glyph_count; glyph_index++)
+		{
+			V2 position = rasterized_line.positions[glyph_index];
+			position.x += text_origin.x;
+			position.y += text_origin.y;
+
+			GlyphAtlasSlot *slot = rasterized_line.slots[glyph_index];
+
+			Box *box = box_array.boxes + box_array.count;
+			box_array.count++;
+			Assert(box_array.count <= box_array.capacity);
+
+			box->origin = position;
+			box->texture_origin.x = slot->x;
+			box->texture_origin.y = slot->y;
+			box->size.x = slot->width;
+			box->size.y = slot->height;
+			box->texture_size.x = slot->width;
+			box->texture_size.y = slot->height;
+
+			if (!view->pressed)
+			{
+				box->color.r = 1;
+				box->color.g = 1;
+				box->color.b = 1;
+			}
+		}
 	}
 
-	V3 color = {0};
-	color.r = 0.5;
-	color.g = 0.5;
-	color.b = 1;
-
-	String8 text = Str8Lit("hello tt fi world 👋 “no.” “no”. WAVE Te 𝕏ⓘ⁵");
-	RasterizeLine(frame_arena, &box_array, text, &glyph_atlas, font, color);
 	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
 
 	V2 texture_bounds = {0};
