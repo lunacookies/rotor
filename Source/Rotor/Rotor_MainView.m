@@ -9,6 +9,8 @@ struct View
 	V2 origin;
 	V2 size;
 	V2 padding;
+	V3 color;
+	V3 pressed_color;
 	B32 pressed;
 	String8 string;
 };
@@ -130,6 +132,12 @@ CreateUI(Arena *arena)
 	button1->padding.x = 10;
 	button1->padding.y = 2;
 	button1->string = Str8Lit("hello tt fi world 👋");
+	button1->color.r = 0.1f;
+	button1->color.g = 0.1f;
+	button1->color.b = 0.1f;
+	button1->pressed_color.r = 0.7f;
+	button1->pressed_color.g = 0.7f;
+	button1->pressed_color.b = 0.7f;
 
 	View *button2 = PushStruct(arena, View);
 	button2->origin.x = 200;
@@ -140,6 +148,12 @@ CreateUI(Arena *arena)
 	button2->padding.y = 5;
 	button2->string = Str8Lit("“no.” “no”. WAVE Te");
 	button2->next = button1;
+	button2->color.r = 1.0f;
+	button2->color.g = 0.5f;
+	button2->color.b = 0.5f;
+	button2->pressed_color.r = 0.7f;
+	button2->pressed_color.g = 1.0f;
+	button2->pressed_color.b = 1.0f;
 
 	View *button3 = PushStruct(arena, View);
 	button3->origin.x = 50;
@@ -150,6 +164,12 @@ CreateUI(Arena *arena)
 	button3->padding.y = 20;
 	button3->string = Str8Lit("𝕏ⓘ⁵");
 	button3->next = button2;
+	button3->color.r = 0.1f;
+	button3->color.g = 0.1f;
+	button3->color.b = 0.5f;
+	button3->pressed_color.r = 0.9f;
+	button3->pressed_color.g = 0.8f;
+	button3->pressed_color.b = 0.8f;
 
 	return button3;
 }
@@ -310,9 +330,15 @@ Event *events;
 
 		bg_box->origin = view->origin;
 		bg_box->size = view->size;
-		bg_box->color.r = MixF32(1, 0, (F32)view->pressed);
-		bg_box->color.g = MixF32(0, 1, (F32)view->pressed);
-		bg_box->color.b = MixF32(1, 0, (F32)view->pressed);
+
+		if (view->pressed)
+		{
+			bg_box->color = view->pressed_color;
+		}
+		else
+		{
+			bg_box->color = view->color;
+		}
 
 		V2 text_origin = view->origin;
 		text_origin.x += view->padding.x;
