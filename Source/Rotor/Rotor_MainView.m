@@ -40,6 +40,14 @@ struct RasterizedLine
 	GlyphAtlasSlot **slots;
 };
 
+typedef struct Event Event;
+struct Event
+{
+	Event *next;
+	V2 location;
+	B32 up;
+};
+
 function void
 RasterizeLine(
         Arena *arena, RasterizedLine *result, String8 text, GlyphAtlas *glyph_atlas, CTFontRef font)
@@ -111,10 +119,73 @@ RasterizeLine(
 	CFRelease(string);
 }
 
+function View *
+CreateUI(Arena *arena)
+{
+	View *button1 = PushStruct(arena, View);
+	button1->origin.x = 100;
+	button1->origin.y = 100;
+	button1->size.x = 50;
+	button1->size.y = 20;
+	button1->padding.x = 10;
+	button1->padding.y = 2;
+	button1->string = Str8Lit("hello tt fi world 👋");
+
+	View *button2 = PushStruct(arena, View);
+	button2->origin.x = 200;
+	button2->origin.y = 300;
+	button2->size.x = 100;
+	button2->size.y = 40;
+	button2->padding.x = 15;
+	button2->padding.y = 5;
+	button2->string = Str8Lit("“no.” “no”. WAVE Te");
+	button2->next = button1;
+
+	View *button3 = PushStruct(arena, View);
+	button3->origin.x = 50;
+	button3->origin.y = 10;
+	button3->size.x = 50;
+	button3->size.y = 50;
+	button3->padding.x = 10;
+	button3->padding.y = 20;
+	button3->string = Str8Lit("𝕏ⓘ⁵");
+	button3->next = button2;
+
+	return button3;
+}
+
+function void
+ProcessEvents(View *views, Event *events)
+{
+	for (Event *event = events; event != 0; event = event->next)
+	{
+		if (event->up)
+		{
+			for (View *view = views; view != 0; view = view->next)
+			{
+				view->pressed = 0;
+			}
+		}
+		else
+		{
+			for (View *view = views; view != 0; view = view->next)
+			{
+				view->pressed =
+				        event->location.x >= view->origin.x &&
+				        event->location.y >= view->origin.y &&
+				        event->location.x <= view->origin.x + view->size.x &&
+				        event->location.y <= view->origin.y + view->size.y;
+			}
+		}
+	}
+}
+
 @implementation MainView
 
 Arena *permanent_arena;
 Arena *frame_arena;
+Arena *ui_arena;
+Arena *events_arena;
 
 CAMetalLayer *metal_layer;
 id<MTLTexture> multisample_texture;
@@ -128,9 +199,7 @@ CTFontRef font;
 CTFontRef big_font;
 
 View *views;
-B32 button_pressed;
-V2 button_origin;
-V2 button_size;
+Event *events;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -140,6 +209,8 @@ V2 button_size;
 	metal_layer = (CAMetalLayer *)self.layer;
 	permanent_arena = ArenaAlloc();
 	frame_arena = ArenaAlloc();
+	ui_arena = ArenaAlloc();
+	events_arena = ArenaAlloc();
 
 	metal_layer.delegate = self;
 	metal_layer.device = MTLCreateSystemDefaultDevice();
@@ -182,36 +253,7 @@ V2 button_size;
 	font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
 	big_font = (__bridge CTFontRef)[NSFont systemFontOfSize:50 weight:NSFontWeightRegular];
 
-	View *button1 = PushStruct(permanent_arena, View);
-	button1->origin.x = 100;
-	button1->origin.y = 100;
-	button1->size.x = 50;
-	button1->size.y = 20;
-	button1->padding.x = 10;
-	button1->padding.y = 2;
-	button1->string = Str8Lit("hello tt fi world 👋");
-
-	View *button2 = PushStruct(permanent_arena, View);
-	button2->origin.x = 200;
-	button2->origin.y = 300;
-	button2->size.x = 100;
-	button2->size.y = 40;
-	button2->padding.x = 15;
-	button2->padding.y = 5;
-	button2->string = Str8Lit("“no.” “no”. WAVE Te");
-	button2->next = button1;
-
-	View *button3 = PushStruct(permanent_arena, View);
-	button3->origin.x = 50;
-	button3->origin.y = 10;
-	button3->size.x = 50;
-	button3->size.y = 50;
-	button3->padding.x = 10;
-	button3->padding.y = 20;
-	button3->string = Str8Lit("𝕏ⓘ⁵");
-	button3->next = button2;
-
-	views = button3;
+	views = CreateUI(ui_arena);
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
@@ -327,6 +369,10 @@ V2 button_size;
 
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
+
+	ProcessEvents(views, events);
+	ArenaClear(events_arena);
+	events = 0;
 }
 
 - (void)viewDidChangeBackingProperties
@@ -383,25 +429,31 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	return kCVReturnSuccess;
 }
 
-- (void)mouseDown:(NSEvent *)event
+- (void)mouseDown:(NSEvent *)ns_event
 {
-	NSPoint location = event.locationInWindow;
+	NSPoint location = ns_event.locationInWindow;
 	location.y = self.bounds.size.height - location.y;
 
-	for (View *view = views; view != 0; view = view->next)
-	{
-		view->pressed = location.x >= view->origin.x && location.y >= view->origin.y &&
-		                location.x <= view->origin.x + view->size.x &&
-		                location.y <= view->origin.y + view->size.y;
-	}
+	Event *event = PushStruct(events_arena, Event);
+	event->location.x = (F32)location.x;
+	event->location.y = (F32)location.y;
+
+	event->next = events;
+	events = event;
 }
 
-- (void)mouseUp:(NSEvent *)event
+- (void)mouseUp:(NSEvent *)ns_event
 {
-	for (View *view = views; view != 0; view = view->next)
-	{
-		view->pressed = 0;
-	}
+	NSPoint location = ns_event.locationInWindow;
+	location.y = self.bounds.size.height - location.y;
+
+	Event *event = PushStruct(events_arena, Event);
+	event->location.x = (F32)location.x;
+	event->location.y = (F32)location.y;
+	event->up = 1;
+
+	event->next = events;
+	events = event;
 }
 
 @end
