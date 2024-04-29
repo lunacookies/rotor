@@ -32,7 +32,7 @@ struct RasterizedLine
 typedef U32 ViewFlags;
 enum
 {
-	ViewFlags_Clickable = (1 << 0),
+	ViewFlags_DrawBackground = (1 << 0),
 };
 
 typedef struct Signal Signal;
@@ -59,6 +59,9 @@ typedef struct View View;
 struct View
 {
 	View *next;
+	View *next_all;
+	View *prev_all;
+
 	ViewFlags flags;
 	V2 origin;
 	V2 size;
@@ -84,7 +87,11 @@ struct State
 {
 	View *first_view;
 	View *last_view;
+
+	View *first_view_all;
+	View *last_view_all;
 	View *first_free_view;
+
 	Event *events;
 	Arena *arena;
 	GlyphAtlas *glyph_atlas;
@@ -173,21 +180,55 @@ StateInit(State *state, GlyphAtlas *glyph_atlas)
 function View *
 ViewAlloc(State *state)
 {
-	if (state->first_free_view == 0)
+	View *result = state->first_free_view;
+	if (result == 0)
 	{
-		return PushStruct(state->arena, View);
+		result = PushStruct(state->arena, View);
+	}
+	else
+	{
+		state->first_free_view = state->first_free_view->next_all;
+		MemoryZeroStruct(result);
 	}
 
-	View *result = state->first_free_view;
-	state->first_free_view = state->first_free_view->next;
-	MemoryZeroStruct(result);
+	if (state->first_view_all == 0)
+	{
+		state->first_view_all = result;
+	}
+	else
+	{
+		state->last_view_all->next_all = result;
+	}
+
+	result->prev_all = state->last_view_all;
+	state->last_view_all = result;
 	return result;
 }
 
 function void
 ViewRelease(State *state, View *view)
 {
-	view->next = state->first_free_view;
+	if (state->first_view_all == view)
+	{
+		state->first_view_all = view->next_all;
+	}
+
+	if (state->last_view_all == view)
+	{
+		state->last_view_all = view->prev_all;
+	}
+
+	if (view->prev_all != 0)
+	{
+		view->prev_all->next_all = view->next_all;
+	}
+
+	if (view->next_all != 0)
+	{
+		view->next_all->prev_all = view->prev_all;
+	}
+
+	view->next_all = state->first_free_view;
 	state->first_free_view = view;
 }
 
@@ -202,6 +243,8 @@ ViewPush(State *state, View *view)
 	{
 		state->last_view->next = view;
 	}
+
+	view->next = 0;
 	state->last_view = view;
 }
 
@@ -210,7 +253,7 @@ ViewFromKey(State *state, String8 key)
 {
 	View *result = 0;
 
-	for (View *view = state->first_view; view != 0; view = view->next)
+	for (View *view = state->first_view_all; view != 0; view = view->next_all)
 	{
 		if (String8Match(view->string, key))
 		{
@@ -223,9 +266,9 @@ ViewFromKey(State *state, String8 key)
 	{
 		result = ViewAlloc(state);
 		result->string = key;
-		ViewPush(state, result);
 	}
 
+	ViewPush(state, result);
 	result->last_touched_build_index = state->build_index;
 
 	return result;
@@ -241,7 +284,6 @@ SignalForView(State *state, View *view)
 	{
 		if (event->up)
 		{
-			view->pressed = 0;
 			result.pressed = 0;
 		}
 
@@ -261,21 +303,28 @@ SignalForView(State *state, View *view)
 		}
 		else
 		{
-			view->pressed = 1;
 			result.pressed = 1;
 		}
 	}
 
+	view->pressed = result.pressed;
 	return result;
+}
+
+function Signal
+Label(State *state, String8 string)
+{
+	View *label = ViewFromKey(state, string);
+	return SignalForView(state, label);
 }
 
 function Signal
 Button(State *state, String8 string)
 {
 	View *button = ViewFromKey(state, string);
+	button->flags |= ViewFlags_DrawBackground;
 	button->padding.x = 10;
 	button->padding.y = 2;
-	button->string = string;
 	button->color.r = 0.1f;
 	button->color.g = 0.1f;
 	button->color.b = 0.1f;
@@ -289,40 +338,24 @@ Button(State *state, String8 string)
 function void
 PruneUnusedViews(State *state)
 {
-	View *prev = 0;
 	View *next = 0;
 
-	for (View *view = state->first_view; view != 0; view = next)
+	for (View *view = state->first_view_all; view != 0; view = next)
 	{
-		next = view->next;
+		next = view->next_all;
 
 		if (view->last_touched_build_index < state->build_index)
 		{
-			if (state->first_view == view)
-			{
-				state->first_view = 0;
-			}
-
-			if (state->last_view == view)
-			{
-				state->last_view = prev;
-			}
-
-			if (prev != 0)
-			{
-				prev->next = view->next;
-			}
-
 			ViewRelease(state, view);
 		}
-
-		prev = view;
 	}
 }
 
 function void
 BuildUI(State *state)
 {
+	state->first_view = 0;
+	state->last_view = 0;
 	state->build_index++;
 
 	if (Clicked(Button(state, Str8Lit("Button 1"))))
@@ -330,9 +363,10 @@ BuildUI(State *state)
 		printf("button 1!\n");
 	}
 
+	Signal button_2_signal = Button(state, Str8Lit("Toggle Button 3"));
 	local_persist B32 show_button_3 = 0;
 
-	if (Clicked(Button(state, Str8Lit("Toggle Button 3"))))
+	if (Clicked(button_2_signal))
 	{
 		printf("button 2!\n");
 		show_button_3 = !show_button_3;
@@ -344,6 +378,11 @@ BuildUI(State *state)
 		{
 			printf("button 3!\n");
 		}
+	}
+
+	if (Pressed(button_2_signal))
+	{
+		Label(state, Str8Lit("Button 2 is currently pressed."));
 	}
 
 	PruneUnusedViews(state);
@@ -377,19 +416,22 @@ RenderUI(State *state, BoxArray *box_array)
 {
 	for (View *view = state->first_view; view != 0; view = view->next)
 	{
-		Box *bg_box = box_array->boxes + box_array->count;
-		box_array->count++;
-
-		bg_box->origin = view->origin;
-		bg_box->size = view->size;
-
-		if (view->pressed)
+		if (view->flags & ViewFlags_DrawBackground)
 		{
-			bg_box->color = view->pressed_color;
-		}
-		else
-		{
-			bg_box->color = view->color;
+			Box *bg_box = box_array->boxes + box_array->count;
+			box_array->count++;
+
+			bg_box->origin = view->origin;
+			bg_box->size = view->size;
+
+			if (view->pressed)
+			{
+				bg_box->color = view->pressed_color;
+			}
+			else
+			{
+				bg_box->color = view->color;
+			}
 		}
 
 		V2 text_origin = view->origin;
@@ -494,7 +536,6 @@ State state;
 	}
 
 	StateInit(&state, &glyph_atlas);
-	BuildUI(&state);
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
@@ -507,7 +548,14 @@ State state;
 {
 	ArenaClear(frame_arena);
 
+	BoxArray box_array = {0};
+	box_array.capacity = 1024;
+	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
+
+	BuildUI(&state);
 	LayoutUI(&state);
+	RenderUI(&state, &box_array);
+	state.events = 0;
 
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
@@ -536,12 +584,6 @@ State state;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	BoxArray box_array = {0};
-	box_array.capacity = 1024;
-	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
-
-	RenderUI(&state, &box_array);
-
 	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
 
 	V2 texture_bounds = {0};
@@ -563,9 +605,6 @@ State state;
 
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
-
-	BuildUI(&state);
-	state.events = 0;
 }
 
 - (void)viewDidChangeBackingProperties
