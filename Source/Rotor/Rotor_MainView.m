@@ -39,8 +39,15 @@ typedef struct Signal Signal;
 struct Signal
 {
 	V2 location;
+	B32 clicked;
 	B32 pressed;
 };
+
+function B32
+Clicked(Signal signal)
+{
+	return signal.clicked;
+}
 
 function B32
 Pressed(Signal signal)
@@ -61,6 +68,7 @@ struct View
 	B32 pressed;
 	String8 string;
 	RasterizedLine rasterized_line;
+	U64 last_touched_build_index;
 };
 
 typedef struct Event Event;
@@ -69,6 +77,19 @@ struct Event
 	Event *next;
 	V2 location;
 	B32 up;
+};
+
+typedef struct State State;
+struct State
+{
+	View *first_view;
+	View *last_view;
+	View *first_free_view;
+	Event *events;
+	Arena *arena;
+	GlyphAtlas *glyph_atlas;
+	CTFontRef font;
+	U64 build_index;
 };
 
 function void
@@ -141,17 +162,6 @@ RasterizeLine(
 	CFRelease(string);
 }
 
-typedef struct State State;
-struct State
-{
-	View *views;
-	View *last_view;
-	Event *events;
-	Arena *arena;
-	GlyphAtlas *glyph_atlas;
-	CTFontRef font;
-};
-
 function void
 StateInit(State *state, GlyphAtlas *glyph_atlas)
 {
@@ -161,11 +171,46 @@ StateInit(State *state, GlyphAtlas *glyph_atlas)
 }
 
 function View *
+ViewAlloc(State *state)
+{
+	if (state->first_free_view == 0)
+	{
+		return PushStruct(state->arena, View);
+	}
+
+	View *result = state->first_free_view;
+	state->first_free_view = state->first_free_view->next;
+	MemoryZeroStruct(result);
+	return result;
+}
+
+function void
+ViewRelease(State *state, View *view)
+{
+	view->next = state->first_free_view;
+	state->first_free_view = view;
+}
+
+function void
+ViewPush(State *state, View *view)
+{
+	if (state->first_view == 0)
+	{
+		state->first_view = view;
+	}
+	else
+	{
+		state->last_view->next = view;
+	}
+	state->last_view = view;
+}
+
+function View *
 ViewFromKey(State *state, String8 key)
 {
 	View *result = 0;
 
-	for (View *view = state->views; view != 0; view = view->next)
+	for (View *view = state->first_view; view != 0; view = view->next)
 	{
 		if (String8Match(view->string, key))
 		{
@@ -176,19 +221,12 @@ ViewFromKey(State *state, String8 key)
 
 	if (result == 0)
 	{
-		result = PushStruct(state->arena, View);
+		result = ViewAlloc(state);
 		result->string = key;
-
-		if (state->views == 0)
-		{
-			state->views = result;
-		}
-		if (state->last_view != 0)
-		{
-			state->last_view->next = result;
-		}
-		state->last_view = result;
+		ViewPush(state, result);
 	}
+
+	result->last_touched_build_index = state->build_index;
 
 	return result;
 }
@@ -197,14 +235,20 @@ function Signal
 SignalForView(State *state, View *view)
 {
 	Signal result = {0};
+	result.pressed = view->pressed;
 
 	for (Event *event = state->events; event != 0; event = event->next)
 	{
+		if (event->up)
+		{
+			view->pressed = 0;
+			result.pressed = 0;
+		}
+
 		B32 in_bounds = event->location.x >= view->origin.x &&
 		                event->location.y >= view->origin.y &&
 		                event->location.x <= view->origin.x + view->size.x &&
 		                event->location.y <= view->origin.y + view->size.y;
-
 		if (!in_bounds)
 		{
 			continue;
@@ -213,12 +257,12 @@ SignalForView(State *state, View *view)
 		result.location = event->location;
 		if (event->up)
 		{
-			view->pressed = 0;
-			result.pressed = 1;
+			result.clicked = 1;
 		}
 		else
 		{
 			view->pressed = 1;
+			result.pressed = 1;
 		}
 	}
 
@@ -243,22 +287,66 @@ Button(State *state, String8 string)
 }
 
 function void
-CreateUI(State *state)
+PruneUnusedViews(State *state)
 {
-	if (Pressed(Button(state, Str8Lit("hello tt fi world 👋"))))
+	View *prev = 0;
+	View *next = 0;
+
+	for (View *view = state->first_view; view != 0; view = next)
+	{
+		next = view->next;
+
+		if (view->last_touched_build_index < state->build_index)
+		{
+			if (state->first_view == view)
+			{
+				state->first_view = 0;
+			}
+
+			if (state->last_view == view)
+			{
+				state->last_view = prev;
+			}
+
+			if (prev != 0)
+			{
+				prev->next = view->next;
+			}
+
+			ViewRelease(state, view);
+		}
+
+		prev = view;
+	}
+}
+
+function void
+BuildUI(State *state)
+{
+	state->build_index++;
+
+	if (Clicked(Button(state, Str8Lit("Button 1"))))
 	{
 		printf("button 1!\n");
 	}
 
-	if (Pressed(Button(state, Str8Lit("“no.” “no”. WAVE Te"))))
+	local_persist B32 show_button_3 = 0;
+
+	if (Clicked(Button(state, Str8Lit("Toggle Button 3"))))
 	{
 		printf("button 2!\n");
+		show_button_3 = !show_button_3;
 	}
 
-	if (Pressed(Button(state, Str8Lit("𝕏ⓘ⁵"))))
+	if (show_button_3)
 	{
-		printf("button 3!\n");
+		if (Clicked(Button(state, Str8Lit("Button 3"))))
+		{
+			printf("button 3!\n");
+		}
 	}
+
+	PruneUnusedViews(state);
 }
 
 function void
@@ -269,7 +357,7 @@ LayoutUI(State *state)
 	current_position.y = 20;
 	F32 margin = 10;
 
-	for (View *view = state->views; view != 0; view = view->next)
+	for (View *view = state->first_view; view != 0; view = view->next)
 	{
 		MemoryZeroStruct(&view->rasterized_line);
 		RasterizeLine(state->arena, &view->rasterized_line, view->string,
@@ -287,7 +375,7 @@ LayoutUI(State *state)
 function void
 RenderUI(State *state, BoxArray *box_array)
 {
-	for (View *view = state->views; view != 0; view = view->next)
+	for (View *view = state->first_view; view != 0; view = view->next)
 	{
 		Box *bg_box = box_array->boxes + box_array->count;
 		box_array->count++;
@@ -406,7 +494,7 @@ State state;
 	}
 
 	StateInit(&state, &glyph_atlas);
-	CreateUI(&state);
+	BuildUI(&state);
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
@@ -476,7 +564,7 @@ State state;
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
 
-	CreateUI(&state);
+	BuildUI(&state);
 	state.events = 0;
 }
 
