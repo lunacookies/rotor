@@ -29,10 +29,30 @@ struct RasterizedLine
 	GlyphAtlasSlot **slots;
 };
 
+typedef U32 ViewFlags;
+enum
+{
+	ViewFlags_Clickable = (1 << 0),
+};
+
+typedef struct Signal Signal;
+struct Signal
+{
+	V2 location;
+	B32 pressed;
+};
+
+function B32
+Pressed(Signal signal)
+{
+	return signal.pressed;
+}
+
 typedef struct View View;
 struct View
 {
 	View *next;
+	ViewFlags flags;
 	V2 origin;
 	V2 size;
 	V2 padding;
@@ -64,7 +84,6 @@ RasterizeLine(
 	CFAttributedStringRef attributed =
 	        CFAttributedStringCreate(kCFAllocatorDefault, string, attributes);
 	CTLineRef line = CTLineCreateWithAttributedString(attributed);
-
 	result->glyph_count = (U64)CTLineGetGlyphCount(line);
 
 	CGRect cg_bounds = CTLineGetBoundsWithOptions(line, 0);
@@ -126,6 +145,8 @@ typedef struct State State;
 struct State
 {
 	View *views;
+	View *last_view;
+	Event *events;
 	Arena *arena;
 	GlyphAtlas *glyph_atlas;
 	CTFontRef font;
@@ -157,14 +178,54 @@ ViewFromKey(State *state, String8 key)
 	{
 		result = PushStruct(state->arena, View);
 		result->string = key;
-		result->next = state->views;
-		state->views = result;
+
+		if (state->views == 0)
+		{
+			state->views = result;
+		}
+		if (state->last_view != 0)
+		{
+			state->last_view->next = result;
+		}
+		state->last_view = result;
 	}
 
 	return result;
 }
 
-function void
+function Signal
+SignalForView(State *state, View *view)
+{
+	Signal result = {0};
+
+	for (Event *event = state->events; event != 0; event = event->next)
+	{
+		B32 in_bounds = event->location.x >= view->origin.x &&
+		                event->location.y >= view->origin.y &&
+		                event->location.x <= view->origin.x + view->size.x &&
+		                event->location.y <= view->origin.y + view->size.y;
+
+		if (!in_bounds)
+		{
+			continue;
+		}
+
+		result.location = event->location;
+		if (event->up)
+		{
+			view->pressed = 0;
+			result.pressed = 1;
+		}
+		else
+		{
+			view->pressed = 1;
+		}
+	}
+
+	return result;
+}
+
+function Signal
 Button(State *state, String8 string)
 {
 	View *button = ViewFromKey(state, string);
@@ -177,39 +238,26 @@ Button(State *state, String8 string)
 	button->pressed_color.r = 0.7f;
 	button->pressed_color.g = 0.7f;
 	button->pressed_color.b = 0.7f;
+
+	return SignalForView(state, button);
 }
 
 function void
 CreateUI(State *state)
 {
-	Button(state, Str8Lit("hello tt fi world 👋"));
-	Button(state, Str8Lit("“no.” “no”. WAVE Te"));
-	Button(state, Str8Lit("𝕏ⓘ⁵"));
-}
-
-function void
-ProcessEvents(View *views, Event *events)
-{
-	for (Event *event = events; event != 0; event = event->next)
+	if (Pressed(Button(state, Str8Lit("hello tt fi world 👋"))))
 	{
-		if (event->up)
-		{
-			for (View *view = views; view != 0; view = view->next)
-			{
-				view->pressed = 0;
-			}
-		}
-		else
-		{
-			for (View *view = views; view != 0; view = view->next)
-			{
-				view->pressed =
-				        event->location.x >= view->origin.x &&
-				        event->location.y >= view->origin.y &&
-				        event->location.x <= view->origin.x + view->size.x &&
-				        event->location.y <= view->origin.y + view->size.y;
-			}
-		}
+		printf("button 1!\n");
+	}
+
+	if (Pressed(Button(state, Str8Lit("“no.” “no”. WAVE Te"))))
+	{
+		printf("button 2!\n");
+	}
+
+	if (Pressed(Button(state, Str8Lit("𝕏ⓘ⁵"))))
+	{
+		printf("button 3!\n");
 	}
 }
 
@@ -295,8 +343,6 @@ RenderUI(State *state, BoxArray *box_array)
 
 Arena *permanent_arena;
 Arena *frame_arena;
-Arena *ui_arena;
-Arena *events_arena;
 
 CAMetalLayer *metal_layer;
 id<MTLTexture> multisample_texture;
@@ -308,7 +354,6 @@ CVDisplayLinkRef display_link;
 GlyphAtlas glyph_atlas;
 
 State state;
-Event *events;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -318,8 +363,6 @@ Event *events;
 	metal_layer = (CAMetalLayer *)self.layer;
 	permanent_arena = ArenaAlloc();
 	frame_arena = ArenaAlloc();
-	ui_arena = ArenaAlloc();
-	events_arena = ArenaAlloc();
 
 	metal_layer.delegate = self;
 	metal_layer.device = MTLCreateSystemDefaultDevice();
@@ -430,10 +473,8 @@ Event *events;
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
 
-	ProcessEvents(state.views, events);
-	ArenaClear(events_arena);
 	CreateUI(&state);
-	events = 0;
+	state.events = 0;
 }
 
 - (void)viewDidChangeBackingProperties
@@ -495,12 +536,12 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	NSPoint location = ns_event.locationInWindow;
 	location.y = self.bounds.size.height - location.y;
 
-	Event *event = PushStruct(events_arena, Event);
+	Event *event = PushStruct(state.arena, Event);
 	event->location.x = (F32)location.x;
 	event->location.y = (F32)location.y;
 
-	event->next = events;
-	events = event;
+	event->next = state.events;
+	state.events = event;
 }
 
 - (void)mouseUp:(NSEvent *)ns_event
@@ -508,13 +549,13 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	NSPoint location = ns_event.locationInWindow;
 	location.y = self.bounds.size.height - location.y;
 
-	Event *event = PushStruct(events_arena, Event);
+	Event *event = PushStruct(state.arena, Event);
 	event->location.x = (F32)location.x;
 	event->location.y = (F32)location.y;
 	event->up = 1;
 
-	event->next = events;
-	events = event;
+	event->next = state.events;
+	state.events = event;
 }
 
 @end
