@@ -265,6 +265,9 @@ function void
 LayoutUI(State *state)
 {
 	V2 current_position = {0};
+	current_position.x = 20;
+	current_position.y = 20;
+	F32 margin = 10;
 
 	for (View *view = state->views; view != 0; view = view->next)
 	{
@@ -277,7 +280,7 @@ LayoutUI(State *state)
 		view->size.x = RoundF32(view->rasterized_line.bounds.x) + view->padding.x * 2;
 		view->size.y = RoundF32(view->rasterized_line.bounds.y) + view->padding.y * 2;
 
-		current_position.y += view->size.y;
+		current_position.y += view->size.y + margin;
 	}
 }
 
