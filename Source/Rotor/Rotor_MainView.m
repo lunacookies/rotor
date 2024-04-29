@@ -121,57 +121,69 @@ RasterizeLine(
 	CFRelease(string);
 }
 
-function View *
-CreateUI(Arena *arena)
+typedef struct State State;
+struct State
 {
-	View *button1 = PushStruct(arena, View);
-	button1->origin.x = 100;
-	button1->origin.y = 100;
-	button1->size.x = 50;
-	button1->size.y = 20;
-	button1->padding.x = 10;
-	button1->padding.y = 2;
-	button1->string = Str8Lit("hello tt fi world 👋");
-	button1->color.r = 0.1f;
-	button1->color.g = 0.1f;
-	button1->color.b = 0.1f;
-	button1->pressed_color.r = 0.7f;
-	button1->pressed_color.g = 0.7f;
-	button1->pressed_color.b = 0.7f;
+	View *views;
+	Arena *arena;
+	V2 current_position;
+};
 
-	View *button2 = PushStruct(arena, View);
-	button2->origin.x = 200;
-	button2->origin.y = 300;
-	button2->size.x = 100;
-	button2->size.y = 40;
-	button2->padding.x = 15;
-	button2->padding.y = 5;
-	button2->string = Str8Lit("“no.” “no”. WAVE Te");
-	button2->next = button1;
-	button2->color.r = 1.0f;
-	button2->color.g = 0.5f;
-	button2->color.b = 0.5f;
-	button2->pressed_color.r = 0.7f;
-	button2->pressed_color.g = 1.0f;
-	button2->pressed_color.b = 1.0f;
+function void
+StateInit(State *state)
+{
+	state->arena = ArenaAlloc();
+}
 
-	View *button3 = PushStruct(arena, View);
-	button3->origin.x = 50;
-	button3->origin.y = 10;
-	button3->size.x = 50;
-	button3->size.y = 50;
-	button3->padding.x = 10;
-	button3->padding.y = 20;
-	button3->string = Str8Lit("𝕏ⓘ⁵");
-	button3->next = button2;
-	button3->color.r = 0.1f;
-	button3->color.g = 0.1f;
-	button3->color.b = 0.5f;
-	button3->pressed_color.r = 0.9f;
-	button3->pressed_color.g = 0.8f;
-	button3->pressed_color.b = 0.8f;
+function View *
+ViewFromKey(State *state, String8 key)
+{
+	View *result = 0;
 
-	return button3;
+	for (View *view = state->views; view != 0; view = view->next)
+	{
+		if (String8Match(view->string, key))
+		{
+			result = view;
+			break;
+		}
+	}
+
+	if (result == 0)
+	{
+		result = PushStruct(state->arena, View);
+		result->string = key;
+		result->next = state->views;
+		state->views = result;
+	}
+
+	return result;
+}
+
+function void
+Button(State *state, String8 string)
+{
+	View *button = ViewFromKey(state, string);
+	button->origin = state->current_position;
+	button->padding.x = 10;
+	button->padding.y = 2;
+	button->string = string;
+	button->color.r = 0.1f;
+	button->color.g = 0.1f;
+	button->color.b = 0.1f;
+	button->pressed_color.r = 0.7f;
+	button->pressed_color.g = 0.7f;
+	button->pressed_color.b = 0.7f;
+	state->current_position.y += 100;
+}
+
+function void
+CreateUI(State *state)
+{
+	MemoryZeroStruct(&state->current_position);
+	Button(state, Str8Lit("hello tt fi world 👋"));
+	Button(state, Str8Lit("“no.” “no”. WAVE Te"));
+	Button(state, Str8Lit("𝕏ⓘ⁵"));
 }
 
 function void
@@ -218,7 +230,7 @@ GlyphAtlas glyph_atlas;
 CTFontRef font;
 CTFontRef big_font;
 
-View *views;
+State state;
 Event *events;
 
 - (instancetype)initWithFrame:(NSRect)frame
@@ -273,7 +285,8 @@ Event *events;
 	font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
 	big_font = (__bridge CTFontRef)[NSFont systemFontOfSize:50 weight:NSFontWeightRegular];
 
-	views = CreateUI(ui_arena);
+	StateInit(&state);
+	CreateUI(&state);
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
@@ -317,7 +330,7 @@ Event *events;
 	box_array.capacity = 1024;
 	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
 
-	for (View *view = views; view != 0; view = view->next)
+	for (View *view = state.views; view != 0; view = view->next)
 	{
 		Box *bg_box = box_array.boxes + box_array.count;
 		box_array.count++;
@@ -396,8 +409,9 @@ Event *events;
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
 
-	ProcessEvents(views, events);
+	ProcessEvents(state.views, events);
 	ArenaClear(events_arena);
+	CreateUI(&state);
 	events = 0;
 }
 

@@ -6,3 +6,5 @@ struct String8
 };
 
 #define Str8Lit(s) ((String8){.data = (U8 *)(s), .count = sizeof(s) - 1})
+
+function B32 String8Match(String8 a, String8 b);

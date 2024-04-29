@@ -84,6 +84,9 @@ function F32 MixF32(F32 x, F32 y, F32 a);
 #define MemoryZeroArray(dst, count) (MemoryZero((dst), sizeof(*(dst)) * (count)))
 #define MemoryZeroStruct(dst) (MemoryZeroArray((dst), 1))
 
+#define MemoryCompare(dst, src, size) (memcmp((dst), (src), (size)))
+#define MemoryMatch(dst, src, size) (MemoryCompare((dst), (src), (size)) == 0)
+
 #define Assert(b)                                                                                  \
 	if (!(b))                                                                                  \
 	{                                                                                          \
