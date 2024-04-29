@@ -2,19 +2,6 @@
 MainView () <CALayerDelegate>
 @end
 
-typedef struct View View;
-struct View
-{
-	View *next;
-	V2 origin;
-	V2 size;
-	V2 padding;
-	V3 color;
-	V3 pressed_color;
-	B32 pressed;
-	String8 string;
-};
-
 typedef struct Box Box;
 struct Box
 {
@@ -40,6 +27,20 @@ struct RasterizedLine
 	U64 glyph_count;
 	V2 *positions;
 	GlyphAtlasSlot **slots;
+};
+
+typedef struct View View;
+struct View
+{
+	View *next;
+	V2 origin;
+	V2 size;
+	V2 padding;
+	V3 color;
+	V3 pressed_color;
+	B32 pressed;
+	String8 string;
+	RasterizedLine rasterized_line;
 };
 
 typedef struct Event Event;
@@ -126,13 +127,16 @@ struct State
 {
 	View *views;
 	Arena *arena;
-	V2 current_position;
+	GlyphAtlas *glyph_atlas;
+	CTFontRef font;
 };
 
 function void
-StateInit(State *state)
+StateInit(State *state, GlyphAtlas *glyph_atlas)
 {
 	state->arena = ArenaAlloc();
+	state->glyph_atlas = glyph_atlas;
+	state->font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
 }
 
 function View *
@@ -164,7 +168,6 @@ function void
 Button(State *state, String8 string)
 {
 	View *button = ViewFromKey(state, string);
-	button->origin = state->current_position;
 	button->padding.x = 10;
 	button->padding.y = 2;
 	button->string = string;
@@ -174,13 +177,11 @@ Button(State *state, String8 string)
 	button->pressed_color.r = 0.7f;
 	button->pressed_color.g = 0.7f;
 	button->pressed_color.b = 0.7f;
-	state->current_position.y += 100;
 }
 
 function void
 CreateUI(State *state)
 {
-	MemoryZeroStruct(&state->current_position);
 	Button(state, Str8Lit("hello tt fi world 👋"));
 	Button(state, Str8Lit("“no.” “no”. WAVE Te"));
 	Button(state, Str8Lit("𝕏ⓘ⁵"));
@@ -212,6 +213,84 @@ ProcessEvents(View *views, Event *events)
 	}
 }
 
+function void
+LayoutUI(State *state)
+{
+	V2 current_position = {0};
+
+	for (View *view = state->views; view != 0; view = view->next)
+	{
+		MemoryZeroStruct(&view->rasterized_line);
+		RasterizeLine(state->arena, &view->rasterized_line, view->string,
+		        state->glyph_atlas, state->font);
+
+		view->origin = current_position;
+
+		view->size.x = RoundF32(view->rasterized_line.bounds.x) + view->padding.x * 2;
+		view->size.y = RoundF32(view->rasterized_line.bounds.y) + view->padding.y * 2;
+
+		current_position.y += view->size.y;
+	}
+}
+
+function void
+RenderUI(State *state, BoxArray *box_array)
+{
+	for (View *view = state->views; view != 0; view = view->next)
+	{
+		Box *bg_box = box_array->boxes + box_array->count;
+		box_array->count++;
+
+		bg_box->origin = view->origin;
+		bg_box->size = view->size;
+
+		if (view->pressed)
+		{
+			bg_box->color = view->pressed_color;
+		}
+		else
+		{
+			bg_box->color = view->color;
+		}
+
+		V2 text_origin = view->origin;
+		text_origin.x += view->padding.x;
+		text_origin.y += view->padding.y;
+		text_origin.y +=
+		        (view->rasterized_line.bounds.y + (F32)CTFontGetCapHeight(state->font)) *
+		        0.5f;
+
+		for (U64 glyph_index = 0; glyph_index < view->rasterized_line.glyph_count;
+		        glyph_index++)
+		{
+			V2 position = view->rasterized_line.positions[glyph_index];
+			position.x += text_origin.x;
+			position.y += text_origin.y;
+
+			GlyphAtlasSlot *slot = view->rasterized_line.slots[glyph_index];
+
+			Box *box = box_array->boxes + box_array->count;
+			box_array->count++;
+			Assert(box_array->count <= box_array->capacity);
+
+			box->origin = position;
+			box->texture_origin.x = slot->origin.x;
+			box->texture_origin.y = slot->origin.y;
+			box->size.x = slot->size.x;
+			box->size.y = slot->size.y;
+			box->texture_size.x = slot->size.x;
+			box->texture_size.y = slot->size.y;
+
+			if (!view->pressed)
+			{
+				box->color.r = 1;
+				box->color.g = 1;
+				box->color.b = 1;
+			}
+		}
+	}
+}
+
 @implementation MainView
 
 Arena *permanent_arena;
@@ -227,8 +306,6 @@ id<MTLRenderPipelineState> pipeline_state;
 CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
-CTFontRef font;
-CTFontRef big_font;
 
 State state;
 Event *events;
@@ -282,10 +359,7 @@ Event *events;
 		abort();
 	}
 
-	font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
-	big_font = (__bridge CTFontRef)[NSFont systemFontOfSize:50 weight:NSFontWeightRegular];
-
-	StateInit(&state);
+	StateInit(&state, &glyph_atlas);
 	CreateUI(&state);
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
@@ -298,6 +372,8 @@ Event *events;
 - (void)displayLayer:(CALayer *)layer
 {
 	ArenaClear(frame_arena);
+
+	LayoutUI(&state);
 
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
@@ -330,62 +406,7 @@ Event *events;
 	box_array.capacity = 1024;
 	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
 
-	for (View *view = state.views; view != 0; view = view->next)
-	{
-		Box *bg_box = box_array.boxes + box_array.count;
-		box_array.count++;
-
-		RasterizedLine rasterized_line = {0};
-		RasterizeLine(frame_arena, &rasterized_line, view->string, &glyph_atlas, font);
-
-		view->size.x = RoundF32(rasterized_line.bounds.x) + view->padding.x * 2;
-		view->size.y = RoundF32(rasterized_line.bounds.y) + view->padding.y * 2;
-
-		bg_box->origin = view->origin;
-		bg_box->size = view->size;
-
-		if (view->pressed)
-		{
-			bg_box->color = view->pressed_color;
-		}
-		else
-		{
-			bg_box->color = view->color;
-		}
-
-		V2 text_origin = view->origin;
-		text_origin.x += view->padding.x;
-		text_origin.y += view->padding.y;
-		text_origin.y += (rasterized_line.bounds.y + (F32)CTFontGetCapHeight(font)) * 0.5f;
-
-		for (U64 glyph_index = 0; glyph_index < rasterized_line.glyph_count; glyph_index++)
-		{
-			V2 position = rasterized_line.positions[glyph_index];
-			position.x += text_origin.x;
-			position.y += text_origin.y;
-
-			GlyphAtlasSlot *slot = rasterized_line.slots[glyph_index];
-
-			Box *box = box_array.boxes + box_array.count;
-			box_array.count++;
-			Assert(box_array.count <= box_array.capacity);
-
-			box->origin = position;
-			box->texture_origin.x = slot->origin.x;
-			box->texture_origin.y = slot->origin.y;
-			box->size.x = slot->size.x;
-			box->size.y = slot->size.y;
-			box->texture_size.x = slot->size.x;
-			box->texture_size.y = slot->size.y;
-
-			if (!view->pressed)
-			{
-				box->color.r = 1;
-				box->color.g = 1;
-				box->color.b = 1;
-			}
-		}
-	}
+	RenderUI(&state, &box_array);
 
 	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
 
