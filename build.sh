@@ -16,7 +16,7 @@ clang -o Products/Rotor.app/Contents/MacOS/Rotor \
 	-I Source \
 	-fmodules -fobjc-arc \
 	-g3 \
-	-ftrivial-auto-var-init=zero -fwrapv -fsanitize=undefined -fshort-enums \
+	-ftrivial-auto-var-init=zero -fwrapv -fsanitize=undefined \
 	-W \
 	-Wall \
 	-Wextra \

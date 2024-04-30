@@ -30,9 +30,10 @@ struct RasterizedLine
 };
 
 typedef U32 ViewFlags;
-enum
+enum : ViewFlags
 {
-	ViewFlags_DrawBackground = (1 << 0),
+	ViewFlags_FirstFrame = (1 << 0),
+	ViewFlags_DrawBackground = (1 << 1),
 };
 
 typedef struct Signal Signal;
@@ -64,6 +65,7 @@ struct View
 
 	ViewFlags flags;
 	V2 origin;
+	V2 origin_target;
 	V2 size;
 	V2 padding;
 	V3 color;
@@ -258,6 +260,7 @@ ViewFromKey(State *state, String8 key)
 		if (String8Match(view->string, key))
 		{
 			result = view;
+			result->flags &= ~ViewFlags_FirstFrame;
 			break;
 		}
 	}
@@ -266,6 +269,7 @@ ViewFromKey(State *state, String8 key)
 	{
 		result = ViewAlloc(state);
 		result->string = key;
+		result->flags |= ViewFlags_FirstFrame;
 	}
 
 	ViewPush(state, result);
@@ -385,6 +389,8 @@ BuildUI(State *state)
 		Label(state, Str8Lit("Button 2 is currently pressed."));
 	}
 
+	Button(state, Str8Lit("Another Button"));
+
 	PruneUnusedViews(state);
 }
 
@@ -402,7 +408,16 @@ LayoutUI(State *state)
 		RasterizeLine(state->arena, &view->rasterized_line, view->string,
 		        state->glyph_atlas, state->font);
 
-		view->origin = current_position;
+		view->origin_target = current_position;
+		if (view->flags & ViewFlags_FirstFrame)
+		{
+			view->origin = current_position;
+		}
+		else
+		{
+			view->origin.x += (view->origin_target.x - view->origin.x) * 0.1f;
+			view->origin.y += (view->origin_target.y - view->origin.y) * 0.1f;
+		}
 
 		view->size.x = RoundF32(view->rasterized_line.bounds.x) + view->padding.x * 2;
 		view->size.y = RoundF32(view->rasterized_line.bounds.y) + view->padding.y * 2;
