@@ -76,12 +76,20 @@ struct View
 	U64 last_touched_build_index;
 };
 
+typedef enum EventKind
+{
+	EventKind_MouseUp = 1,
+	EventKind_MouseDown,
+	EventKind_MouseDragged,
+} EventKind;
+
 typedef struct Event Event;
 struct Event
 {
 	Event *next;
 	V2 location;
-	B32 up;
+	V2 last_mouse_down_location;
+	EventKind kind;
 };
 
 typedef struct State State;
@@ -286,7 +294,7 @@ SignalForView(State *state, View *view)
 
 	for (Event *event = state->events; event != 0; event = event->next)
 	{
-		if (event->up)
+		if (event->kind == EventKind_MouseUp)
 		{
 			result.pressed = 0;
 		}
@@ -295,19 +303,51 @@ SignalForView(State *state, View *view)
 		                event->location.y >= view->origin.y &&
 		                event->location.x <= view->origin.x + view->size.x &&
 		                event->location.y <= view->origin.y + view->size.y;
+
+		B32 last_mouse_down_in_bounds =
+		        event->last_mouse_down_location.x >= view->origin.x &&
+		        event->last_mouse_down_location.y >= view->origin.y &&
+		        event->last_mouse_down_location.x <= view->origin.x + view->size.x &&
+		        event->last_mouse_down_location.y <= view->origin.y + view->size.y;
+
+		if (event->kind == EventKind_MouseDragged && !in_bounds)
+		{
+			result.pressed = 0;
+			continue;
+		}
+
 		if (!in_bounds)
 		{
 			continue;
 		}
 
 		result.location = event->location;
-		if (event->up)
+
+		switch (event->kind)
 		{
-			result.clicked = 1;
-		}
-		else
-		{
-			result.pressed = 1;
+			case EventKind_MouseUp:
+			{
+				if (last_mouse_down_in_bounds)
+				{
+					result.clicked = 1;
+				}
+			}
+			break;
+
+			case EventKind_MouseDown:
+			{
+				result.pressed = 1;
+			}
+			break;
+
+			case EventKind_MouseDragged:
+			{
+				if (last_mouse_down_in_bounds)
+				{
+					result.pressed = 1;
+				}
+			}
+			break;
 		}
 	}
 
@@ -356,45 +396,6 @@ PruneUnusedViews(State *state)
 }
 
 function void
-BuildUI(State *state)
-{
-	state->first_view = 0;
-	state->last_view = 0;
-	state->build_index++;
-
-	if (Clicked(Button(state, Str8Lit("Button 1"))))
-	{
-		printf("button 1!\n");
-	}
-
-	Signal button_2_signal = Button(state, Str8Lit("Toggle Button 3"));
-	local_persist B32 show_button_3 = 0;
-
-	if (Clicked(button_2_signal))
-	{
-		printf("button 2!\n");
-		show_button_3 = !show_button_3;
-	}
-
-	if (show_button_3)
-	{
-		if (Clicked(Button(state, Str8Lit("Button 3"))))
-		{
-			printf("button 3!\n");
-		}
-	}
-
-	if (Pressed(button_2_signal))
-	{
-		Label(state, Str8Lit("Button 2 is currently pressed."));
-	}
-
-	Button(state, Str8Lit("Another Button"));
-
-	PruneUnusedViews(state);
-}
-
-function void
 LayoutUI(State *state)
 {
 	V2 current_position = {0};
@@ -424,6 +425,55 @@ LayoutUI(State *state)
 
 		current_position.y += view->size.y + margin;
 	}
+}
+
+function void
+StartBuild(State *state)
+{
+	state->first_view = 0;
+	state->last_view = 0;
+	state->build_index++;
+}
+
+function void
+EndBuild(State *state)
+{
+	PruneUnusedViews(state);
+	LayoutUI(state);
+	state->events = 0;
+}
+
+function void
+BuildUI(State *state)
+{
+	if (Clicked(Button(state, Str8Lit("Button 1"))))
+	{
+		printf("button 1!\n");
+	}
+
+	Signal button_2_signal = Button(state, Str8Lit("Toggle Button 3"));
+	local_persist B32 show_button_3 = 0;
+
+	if (Clicked(button_2_signal))
+	{
+		printf("button 2!\n");
+		show_button_3 = !show_button_3;
+	}
+
+	if (show_button_3)
+	{
+		if (Clicked(Button(state, Str8Lit("Button 3"))))
+		{
+			printf("button 3!\n");
+		}
+	}
+
+	if (Pressed(button_2_signal))
+	{
+		Label(state, Str8Lit("Button 2 is currently pressed."));
+	}
+
+	Button(state, Str8Lit("Another Button"));
 }
 
 function void
@@ -500,8 +550,8 @@ id<MTLRenderPipelineState> pipeline_state;
 CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
-
 State state;
+V2 last_mouse_down_location;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -567,10 +617,11 @@ State state;
 	box_array.capacity = 1024;
 	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
 
+	StartBuild(&state);
 	BuildUI(&state);
-	LayoutUI(&state);
+	EndBuild(&state);
+
 	RenderUI(&state, &box_array);
-	state.events = 0;
 
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
@@ -676,29 +727,61 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	return kCVReturnSuccess;
 }
 
-- (void)mouseDown:(NSEvent *)ns_event
+- (void)mouseUp:(NSEvent *)event
 {
-	NSPoint location = ns_event.locationInWindow;
-	location.y = self.bounds.size.height - location.y;
-
-	Event *event = PushStruct(state.arena, Event);
-	event->location.x = (F32)location.x;
-	event->location.y = (F32)location.y;
-
-	event->next = state.events;
-	state.events = event;
+	[self handleEvent:event];
+}
+- (void)mouseDown:(NSEvent *)event
+{
+	[self handleEvent:event];
+}
+- (void)mouseDragged:(NSEvent *)event
+{
+	[self handleEvent:event];
 }
 
-- (void)mouseUp:(NSEvent *)ns_event
+- (void)handleEvent:(NSEvent *)ns_event
 {
-	NSPoint location = ns_event.locationInWindow;
-	location.y = self.bounds.size.height - location.y;
+	EventKind kind = 0;
+
+	switch (ns_event.type)
+	{
+		default: return;
+
+		case NSEventTypeLeftMouseUp:
+		{
+			kind = EventKind_MouseUp;
+		}
+		break;
+
+		case NSEventTypeLeftMouseDown:
+		{
+			kind = EventKind_MouseDown;
+		}
+		break;
+
+		case NSEventTypeLeftMouseDragged:
+		{
+			kind = EventKind_MouseDragged;
+		}
+		break;
+	}
+
+	NSPoint location_ns_point = ns_event.locationInWindow;
+	location_ns_point.y = self.bounds.size.height - location_ns_point.y;
+	V2 location = {0};
+	location.x = (F32)location_ns_point.x;
+	location.y = (F32)location_ns_point.y;
+
+	if (kind == EventKind_MouseDown)
+	{
+		last_mouse_down_location = location;
+	}
 
 	Event *event = PushStruct(state.arena, Event);
-	event->location.x = (F32)location.x;
-	event->location.y = (F32)location.y;
-	event->up = 1;
-
+	event->kind = kind;
+	event->location = location;
+	event->last_mouse_down_location = last_mouse_down_location;
 	event->next = state.events;
 	state.events = event;
 }
