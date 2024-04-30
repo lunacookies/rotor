@@ -34,6 +34,7 @@ enum : ViewFlags
 {
 	ViewFlags_FirstFrame = (1 << 0),
 	ViewFlags_DrawBackground = (1 << 1),
+	ViewFlags_DrawText = (1 << 2),
 };
 
 typedef struct Signal Signal;
@@ -358,25 +359,62 @@ SignalForView(State *state, View *view)
 function Signal
 Label(State *state, String8 string)
 {
-	View *label = ViewFromKey(state, string);
-	return SignalForView(state, label);
+	View *view = ViewFromKey(state, string);
+	view->flags |= ViewFlags_DrawText;
+	return SignalForView(state, view);
 }
 
 function Signal
 Button(State *state, String8 string)
 {
-	View *button = ViewFromKey(state, string);
-	button->flags |= ViewFlags_DrawBackground;
-	button->padding.x = 10;
-	button->padding.y = 2;
-	button->color.r = 0.1f;
-	button->color.g = 0.1f;
-	button->color.b = 0.1f;
-	button->pressed_color.r = 0.7f;
-	button->pressed_color.g = 0.7f;
-	button->pressed_color.b = 0.7f;
+	View *view = ViewFromKey(state, string);
+	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawText;
+	view->padding.x = 10;
+	view->padding.y = 2;
+	view->color.r = 0.1f;
+	view->color.g = 0.1f;
+	view->color.b = 0.1f;
+	view->pressed_color.r = 0.7f;
+	view->pressed_color.g = 0.7f;
+	view->pressed_color.b = 0.7f;
 
-	return SignalForView(state, button);
+	return SignalForView(state, view);
+}
+
+function Signal
+Checkbox(State *state, B32 *value, String8 string)
+{
+	View *view = ViewFromKey(state, string);
+	view->flags |= ViewFlags_DrawBackground;
+	view->padding.x = 10;
+	view->padding.y = 10;
+
+	Signal signal = SignalForView(state, view);
+	if (Clicked(signal))
+	{
+		*value = !*value;
+	}
+
+	if (*value)
+	{
+		view->color.r = 0;
+		view->color.g = 0.5f;
+		view->color.b = 1;
+		view->pressed_color.r = 0.2f;
+		view->pressed_color.g = 0.7f;
+		view->pressed_color.b = 1;
+	}
+	else
+	{
+		view->color.r = 0.1f;
+		view->color.g = 0.1f;
+		view->color.b = 0.1f;
+		view->pressed_color.r = 0.4f;
+		view->pressed_color.g = 0.4f;
+		view->pressed_color.b = 0.4f;
+	}
+
+	return signal;
 }
 
 function void
@@ -406,8 +444,11 @@ LayoutUI(State *state)
 	for (View *view = state->first_view; view != 0; view = view->next)
 	{
 		MemoryZeroStruct(&view->rasterized_line);
-		RasterizeLine(state->arena, &view->rasterized_line, view->string,
-		        state->glyph_atlas, state->font);
+		if (view->flags & ViewFlags_DrawText)
+		{
+			RasterizeLine(state->arena, &view->rasterized_line, view->string,
+			        state->glyph_atlas, state->font);
+		}
 
 		view->origin_target = current_position;
 		if (view->flags & ViewFlags_FirstFrame)
@@ -474,6 +515,8 @@ BuildUI(State *state)
 	}
 
 	Button(state, Str8Lit("Another Button"));
+
+	Checkbox(state, &show_button_3, Str8Lit("checkbox"));
 }
 
 function void
@@ -499,39 +542,42 @@ RenderUI(State *state, BoxArray *box_array)
 			}
 		}
 
-		V2 text_origin = view->origin;
-		text_origin.x += view->padding.x;
-		text_origin.y += view->padding.y;
-		text_origin.y +=
-		        (view->rasterized_line.bounds.y + (F32)CTFontGetCapHeight(state->font)) *
-		        0.5f;
-
-		for (U64 glyph_index = 0; glyph_index < view->rasterized_line.glyph_count;
-		        glyph_index++)
+		if (view->flags & ViewFlags_DrawText)
 		{
-			V2 position = view->rasterized_line.positions[glyph_index];
-			position.x += text_origin.x;
-			position.y += text_origin.y;
+			V2 text_origin = view->origin;
+			text_origin.x += view->padding.x;
+			text_origin.y += view->padding.y;
+			text_origin.y += (view->rasterized_line.bounds.y +
+			                         (F32)CTFontGetCapHeight(state->font)) *
+			                 0.5f;
 
-			GlyphAtlasSlot *slot = view->rasterized_line.slots[glyph_index];
-
-			Box *box = box_array->boxes + box_array->count;
-			box_array->count++;
-			Assert(box_array->count <= box_array->capacity);
-
-			box->origin = position;
-			box->texture_origin.x = slot->origin.x;
-			box->texture_origin.y = slot->origin.y;
-			box->size.x = slot->size.x;
-			box->size.y = slot->size.y;
-			box->texture_size.x = slot->size.x;
-			box->texture_size.y = slot->size.y;
-
-			if (!view->pressed)
+			for (U64 glyph_index = 0; glyph_index < view->rasterized_line.glyph_count;
+			        glyph_index++)
 			{
-				box->color.r = 1;
-				box->color.g = 1;
-				box->color.b = 1;
+				V2 position = view->rasterized_line.positions[glyph_index];
+				position.x += text_origin.x;
+				position.y += text_origin.y;
+
+				GlyphAtlasSlot *slot = view->rasterized_line.slots[glyph_index];
+
+				Box *box = box_array->boxes + box_array->count;
+				box_array->count++;
+				Assert(box_array->count <= box_array->capacity);
+
+				box->origin = position;
+				box->texture_origin.x = slot->origin.x;
+				box->texture_origin.y = slot->origin.y;
+				box->size.x = slot->size.x;
+				box->size.y = slot->size.y;
+				box->texture_size.x = slot->size.x;
+				box->texture_size.y = slot->size.y;
+
+				if (!view->pressed)
+				{
+					box->color.r = 1;
+					box->color.g = 1;
+					box->color.b = 1;
+				}
 			}
 		}
 	}
