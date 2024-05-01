@@ -124,6 +124,7 @@ struct State
 
 	Event *events;
 	Arena *arena;
+	Arena *frame_arena;
 	GlyphAtlas *glyph_atlas;
 	CTFontRef font;
 	U64 build_index;
@@ -202,9 +203,10 @@ RasterizeLine(
 }
 
 function void
-StateInit(State *state, GlyphAtlas *glyph_atlas)
+StateInit(State *state, Arena *frame_arena, GlyphAtlas *glyph_atlas)
 {
 	state->arena = ArenaAlloc();
+	state->frame_arena = frame_arena;
 	state->glyph_atlas = glyph_atlas;
 	state->font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
 }
@@ -548,7 +550,7 @@ LayoutView(State *state, View *view, V2 origin)
 	MemoryZeroStruct(&view->rasterized_line);
 	if (view->flags & ViewFlags_DrawText)
 	{
-		RasterizeLine(state->arena, &view->rasterized_line, view->string,
+		RasterizeLine(state->frame_arena, &view->rasterized_line, view->string,
 		        state->glyph_atlas, state->font);
 	}
 
@@ -801,7 +803,7 @@ V2 last_mouse_down_location;
 		abort();
 	}
 
-	StateInit(&state, &glyph_atlas);
+	StateInit(&state, frame_arena, &glyph_atlas);
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
@@ -812,8 +814,6 @@ V2 last_mouse_down_location;
 
 - (void)displayLayer:(CALayer *)layer
 {
-	ArenaClear(frame_arena);
-
 	BoxArray box_array = {0};
 	box_array.capacity = 1024;
 
@@ -876,6 +876,8 @@ V2 last_mouse_down_location;
 
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
+
+	ArenaClear(frame_arena);
 }
 
 - (void)viewDidChangeBackingProperties
@@ -983,7 +985,7 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 		last_mouse_down_location = location;
 	}
 
-	Event *event = PushStruct(state.arena, Event);
+	Event *event = PushStruct(frame_arena, Event);
 	event->kind = kind;
 	event->location = location;
 	event->last_mouse_down_location = last_mouse_down_location;
