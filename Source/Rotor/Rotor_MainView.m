@@ -84,8 +84,10 @@ struct View
 	ViewFlags flags;
 	V2 origin;
 	V2 origin_target;
+	V2 origin_velocity;
 	V2 size;
 	V2 size_target;
+	V2 size_velocity;
 	V2 padding;
 	F32 child_gap;
 	Axis2 child_layout_axis;
@@ -551,6 +553,36 @@ PruneUnusedViews(State *state)
 	}
 }
 
+global B32 use_springs = 1;
+
+function void
+StepAnimation(F32 *x, F32 *dx, F32 x_target, B32 is_size)
+{
+	if (!use_springs)
+	{
+		*x += (x_target - *x) * 0.1f;
+		return;
+	}
+
+	F32 tension = 1;
+	F32 friction = 5;
+	F32 mass = 20;
+
+	if (is_size && x_target <= 0 && *x <= 0)
+	{
+		*x = 0;
+		*dx = 0;
+		return;
+	}
+
+	F32 displacement = *x - x_target;
+	F32 tension_force = -tension * displacement;
+	F32 friction_force = -friction * *dx;
+	F32 ddx = (tension_force + friction_force) * (1.f / mass);
+	*dx += ddx;
+	*x += *dx;
+}
+
 function void
 LayoutView(State *state, View *view, V2 origin)
 {
@@ -623,10 +655,10 @@ LayoutView(State *state, View *view, V2 origin)
 	}
 	else
 	{
-		view->origin.x += (view->origin_target.x - view->origin.x) * 0.1f;
-		view->origin.y += (view->origin_target.y - view->origin.y) * 0.1f;
-		view->size.x += (view->size_target.x - view->size.x) * 0.1f;
-		view->size.y += (view->size_target.y - view->size.y) * 0.1f;
+		StepAnimation(&view->origin.x, &view->origin_velocity.x, view->origin_target.x, 0);
+		StepAnimation(&view->origin.y, &view->origin_velocity.y, view->origin_target.y, 0);
+		StepAnimation(&view->size.x, &view->size_velocity.x, view->size_target.x, 1);
+		StepAnimation(&view->size.y, &view->size_velocity.y, view->size_target.y, 1);
 	}
 }
 
@@ -692,6 +724,7 @@ BuildUI(State *state)
 
 	local_persist B32 checked = 0;
 	Checkbox(state, &checked, Str8Lit("Another Checkbox"));
+	Checkbox(state, &use_springs, Str8Lit("Animate Using Springs"));
 }
 
 function void

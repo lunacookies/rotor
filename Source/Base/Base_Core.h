@@ -63,6 +63,7 @@ typedef enum Axis2
 
 #define function static
 #define local_persist static
+#define global static
 
 #define Min(x, y) (((x) < (y)) ? (x) : (y))
 #define Max(x, y) (((x) > (y)) ? (x) : (y))
