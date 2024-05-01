@@ -314,7 +314,6 @@ ViewFromString(State *state, String8 string)
 		if (view->key == key)
 		{
 			result = view;
-			Assert(String8Match(view->string, string));
 			result->flags &= ~ViewFlags_FirstFrame;
 			break;
 		}
@@ -324,7 +323,6 @@ ViewFromString(State *state, String8 string)
 	{
 		result = ViewAlloc(state);
 		result->key = key;
-		result->string = string;
 		result->flags |= ViewFlags_FirstFrame;
 	}
 
@@ -408,6 +406,7 @@ Label(State *state, String8 string)
 {
 	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawText;
+	view->string = string;
 	return SignalForView(state, view);
 }
 
@@ -416,6 +415,7 @@ Button(State *state, String8 string)
 {
 	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawText;
+	view->string = string;
 	view->padding.x = 10;
 	view->padding.y = 2;
 	view->color.r = 0.1f;
@@ -433,16 +433,28 @@ Checkbox(State *state, B32 *value, String8 string)
 {
 	MakeNextCurrent(state);
 	View *view = ViewFromString(state, string);
-	view->flags |= ViewFlags_DrawBackground;
-	view->padding.x = 5;
-	view->padding.y = 5;
 
+	MakeNextCurrent(state);
+	View *box = ViewFromString(state, Str8Lit("box"));
 	View *mark = ViewFromString(state, Str8Lit("mark"));
+	MakeParentCurrent(state);
+
+	View *label = ViewFromString(state, Str8Lit("label"));
+	MakeParentCurrent(state);
+
+	box->flags |= ViewFlags_DrawBackground;
+	box->padding.x = 5;
+	box->padding.y = 5;
+
 	mark->flags |= ViewFlags_DrawBackground;
 	mark->padding.x = 5;
 	mark->padding.y = 5;
 
+	label->flags |= ViewFlags_DrawText;
+	label->string = string;
+
 	Signal signal = SignalForView(state, view);
+	SignalForView(state, box); // calculate pressed state
 	if (Clicked(signal))
 	{
 		*value = !*value;
@@ -450,30 +462,29 @@ Checkbox(State *state, B32 *value, String8 string)
 
 	if (*value)
 	{
-		view->color.r = 0;
-		view->color.g = 0.5f;
-		view->color.b = 1;
-		view->pressed_color.r = 0.2f;
-		view->pressed_color.g = 0.7f;
-		view->pressed_color.b = 1;
+		box->color.r = 0;
+		box->color.g = 0.5f;
+		box->color.b = 1;
+		box->pressed_color.r = 0.2f;
+		box->pressed_color.g = 0.7f;
+		box->pressed_color.b = 1;
 		mark->color.r = 1;
 		mark->color.g = 1;
 		mark->color.b = 1;
 	}
 	else
 	{
-		view->color.r = 0.1f;
-		view->color.g = 0.1f;
-		view->color.b = 0.1f;
-		view->pressed_color.r = 0.4f;
-		view->pressed_color.g = 0.4f;
-		view->pressed_color.b = 0.4f;
+		box->color.r = 0.1f;
+		box->color.g = 0.1f;
+		box->color.b = 0.1f;
+		box->pressed_color.r = 0.4f;
+		box->pressed_color.g = 0.4f;
+		box->pressed_color.b = 0.4f;
 		mark->color.r = 0.5f;
 		mark->color.g = 0.5f;
 		mark->color.b = 0.5f;
 	}
 
-	MakeParentCurrent(state);
 	return signal;
 }
 
