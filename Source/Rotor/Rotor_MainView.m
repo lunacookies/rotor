@@ -88,11 +88,10 @@ struct View
 	V2 padding;
 	F32 child_gap;
 	V3 color;
-	V3 pressed_color;
-	B32 pressed;
 	String8 string;
 	RasterizedLine rasterized_line;
 	U64 last_touched_build_index;
+	B32 pressed;
 };
 
 typedef enum EventKind
@@ -418,14 +417,23 @@ Button(State *state, String8 string)
 	view->string = string;
 	view->padding.x = 10;
 	view->padding.y = 2;
-	view->color.r = 0.1f;
-	view->color.g = 0.1f;
-	view->color.b = 0.1f;
-	view->pressed_color.r = 0.7f;
-	view->pressed_color.g = 0.7f;
-	view->pressed_color.b = 0.7f;
 
-	return SignalForView(state, view);
+	Signal signal = SignalForView(state, view);
+
+	if (Pressed(signal))
+	{
+		view->color.r = 0.7f;
+		view->color.g = 0.7f;
+		view->color.b = 0.7f;
+	}
+	else
+	{
+		view->color.r = 0.1f;
+		view->color.g = 0.1f;
+		view->color.b = 0.1f;
+	}
+
+	return signal;
 }
 
 function Signal
@@ -462,24 +470,36 @@ Checkbox(State *state, B32 *value, String8 string)
 
 	if (*value)
 	{
-		box->color.r = 0;
-		box->color.g = 0.5f;
-		box->color.b = 1;
-		box->pressed_color.r = 0.2f;
-		box->pressed_color.g = 0.7f;
-		box->pressed_color.b = 1;
+		if (Pressed(signal))
+		{
+			box->color.r = 0.2f;
+			box->color.g = 0.7f;
+			box->color.b = 1;
+		}
+		else
+		{
+			box->color.r = 0;
+			box->color.g = 0.5f;
+			box->color.b = 1;
+		}
 		mark->color.r = 1;
 		mark->color.g = 1;
 		mark->color.b = 1;
 	}
 	else
 	{
-		box->color.r = 0.1f;
-		box->color.g = 0.1f;
-		box->color.b = 0.1f;
-		box->pressed_color.r = 0.4f;
-		box->pressed_color.g = 0.4f;
-		box->pressed_color.b = 0.4f;
+		if (Pressed(signal))
+		{
+			box->color.r = 0.4f;
+			box->color.g = 0.4f;
+			box->color.b = 0.4f;
+		}
+		else
+		{
+			box->color.r = 0.1f;
+			box->color.g = 0.1f;
+			box->color.b = 0.1f;
+		}
 		mark->color.r = 0.5f;
 		mark->color.g = 0.5f;
 		mark->color.b = 0.5f;
@@ -621,15 +641,7 @@ RenderView(State *state, View *view, BoxArray *box_array)
 
 		bg_box->origin = view->origin;
 		bg_box->size = view->size;
-
-		if (view->pressed)
-		{
-			bg_box->color = view->pressed_color;
-		}
-		else
-		{
-			bg_box->color = view->color;
-		}
+		bg_box->color = view->color;
 	}
 
 	if (view->flags & ViewFlags_DrawText)
@@ -661,13 +673,9 @@ RenderView(State *state, View *view, BoxArray *box_array)
 			box->size.y = slot->size.y;
 			box->texture_size.x = slot->size.x;
 			box->texture_size.y = slot->size.y;
-
-			if (!view->pressed)
-			{
-				box->color.r = 1;
-				box->color.g = 1;
-				box->color.b = 1;
-			}
+			box->color.r = 1;
+			box->color.g = 1;
+			box->color.b = 1;
 		}
 	}
 
