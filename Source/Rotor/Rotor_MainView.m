@@ -85,6 +85,7 @@ struct View
 	V2 origin;
 	V2 origin_target;
 	V2 size;
+	V2 size_target;
 	V2 padding;
 	F32 child_gap;
 	Axis2 child_layout_axis;
@@ -466,15 +467,11 @@ Checkbox(State *state, B32 *value, String8 string)
 
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
-
 	box->flags |= ViewFlags_DrawBackground;
-	box->padding.x = 5;
-	box->padding.y = 5;
-
 	mark->flags |= ViewFlags_DrawBackground;
-	mark->padding.x = 5;
-	mark->padding.y = 5;
-
+	mark->color.r = 1;
+	mark->color.g = 1;
+	mark->color.b = 1;
 	label->flags |= ViewFlags_DrawText;
 	label->string = string;
 	label->text_color.r = 1;
@@ -495,16 +492,21 @@ Checkbox(State *state, B32 *value, String8 string)
 			box->color.r = 0.2f;
 			box->color.g = 0.7f;
 			box->color.b = 1;
+			box->padding.x = 6;
+			box->padding.y = 6;
+			mark->padding.x = 4;
+			mark->padding.y = 4;
 		}
 		else
 		{
 			box->color.r = 0;
 			box->color.g = 0.5f;
 			box->color.b = 1;
+			box->padding.x = 5;
+			box->padding.y = 5;
+			mark->padding.x = 5;
+			mark->padding.y = 5;
 		}
-		mark->color.r = 1;
-		mark->color.g = 1;
-		mark->color.b = 1;
 	}
 	else
 	{
@@ -513,16 +515,21 @@ Checkbox(State *state, B32 *value, String8 string)
 			box->color.r = 0.4f;
 			box->color.g = 0.4f;
 			box->color.b = 0.4f;
+			box->padding.x = 8;
+			box->padding.y = 8;
+			mark->padding.x = 2;
+			mark->padding.y = 2;
 		}
 		else
 		{
 			box->color.r = 0.1f;
 			box->color.g = 0.1f;
 			box->color.b = 0.1f;
+			box->padding.x = 10;
+			box->padding.y = 10;
+			mark->padding.x = 0;
+			mark->padding.y = 0;
 		}
-		mark->color.r = 0.5f;
-		mark->color.g = 0.5f;
-		mark->color.b = 0.5f;
 	}
 
 	return signal;
@@ -554,17 +561,6 @@ LayoutView(State *state, View *view, V2 origin)
 		        state->glyph_atlas, state->font);
 	}
 
-	view->origin_target = origin;
-	if (view->flags & ViewFlags_FirstFrame)
-	{
-		view->origin = origin;
-	}
-	else
-	{
-		view->origin.x += (view->origin_target.x - view->origin.x) * 0.1f;
-		view->origin.y += (view->origin_target.y - view->origin.y) * 0.1f;
-	}
-
 	V2 start_position = origin;
 	V2 current_position = origin;
 	current_position.x += view->padding.x;
@@ -579,20 +575,20 @@ LayoutView(State *state, View *view, V2 origin)
 	for (View *child = view->first; child != 0; child = child->next)
 	{
 		LayoutView(state, child, current_position);
-		content_size_max.x = Max(content_size_max.x, child->size.x);
-		content_size_max.y = Max(content_size_max.y, child->size.y);
+		content_size_max.x = Max(content_size_max.x, child->size_target.x);
+		content_size_max.y = Max(content_size_max.y, child->size_target.y);
 
 		switch (view->child_layout_axis)
 		{
 			case Axis2_X:
 			{
-				current_position.x += child->size.x + view->child_gap;
+				current_position.x += child->size_target.x + view->child_gap;
 			}
 			break;
 
 			case Axis2_Y:
 			{
-				current_position.y += child->size.y + view->child_gap;
+				current_position.y += child->size_target.y + view->child_gap;
 			}
 			break;
 		}
@@ -600,21 +596,37 @@ LayoutView(State *state, View *view, V2 origin)
 
 	current_position.y += view->padding.y;
 
+	// Update origin and size targets.
+	view->origin_target = origin;
 	switch (view->child_layout_axis)
 	{
 		case Axis2_X:
 		{
-			view->size.x = current_position.x - start_position.x;
-			view->size.y = content_size_max.y + view->padding.y * 2;
+			view->size_target.x = current_position.x - start_position.x;
+			view->size_target.y = content_size_max.y + view->padding.y * 2;
 		}
 		break;
 
 		case Axis2_Y:
 		{
-			view->size.x = content_size_max.x + view->padding.x * 2;
-			view->size.y = current_position.y - start_position.y;
+			view->size_target.x = content_size_max.x + view->padding.x * 2;
+			view->size_target.y = current_position.y - start_position.y;
 		}
 		break;
+	}
+
+	// Step origin and size animations towards their targets.
+	if (view->flags & ViewFlags_FirstFrame)
+	{
+		view->origin = view->origin_target;
+		view->size = view->size_target;
+	}
+	else
+	{
+		view->origin.x += (view->origin_target.x - view->origin.x) * 0.1f;
+		view->origin.y += (view->origin_target.y - view->origin.y) * 0.1f;
+		view->size.x += (view->size_target.x - view->size.x) * 0.1f;
+		view->size.y += (view->size_target.y - view->size.y) * 0.1f;
 	}
 }
 
@@ -676,10 +688,10 @@ BuildUI(State *state)
 
 	Button(state, Str8Lit("Another Button"));
 
-	Checkbox(state, &show_button_3, Str8Lit("checkbox1"));
+	Checkbox(state, &show_button_3, Str8Lit("Button 3?"));
 
 	local_persist B32 checked = 0;
-	Checkbox(state, &checked, Str8Lit("checkbox2"));
+	Checkbox(state, &checked, Str8Lit("Another Checkbox"));
 }
 
 function void
