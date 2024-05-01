@@ -88,6 +88,7 @@ struct View
 	V2 padding;
 	F32 child_gap;
 	V3 color;
+	V3 text_color;
 	String8 string;
 	RasterizedLine rasterized_line;
 	U64 last_touched_build_index;
@@ -406,6 +407,9 @@ Label(State *state, String8 string)
 	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawText;
 	view->string = string;
+	view->text_color.r = 1;
+	view->text_color.g = 1;
+	view->text_color.b = 1;
 	return SignalForView(state, view);
 }
 
@@ -425,12 +429,18 @@ Button(State *state, String8 string)
 		view->color.r = 0.7f;
 		view->color.g = 0.7f;
 		view->color.b = 0.7f;
+		view->text_color.r = 0;
+		view->text_color.g = 0;
+		view->text_color.b = 0;
 	}
 	else
 	{
 		view->color.r = 0.1f;
 		view->color.g = 0.1f;
 		view->color.b = 0.1f;
+		view->text_color.r = 1;
+		view->text_color.g = 1;
+		view->text_color.b = 1;
 	}
 
 	return signal;
@@ -460,6 +470,9 @@ Checkbox(State *state, B32 *value, String8 string)
 
 	label->flags |= ViewFlags_DrawText;
 	label->string = string;
+	label->text_color.r = 1;
+	label->text_color.g = 1;
+	label->text_color.b = 1;
 
 	Signal signal = SignalForView(state, view);
 	SignalForView(state, box); // calculate pressed state
@@ -673,9 +686,7 @@ RenderView(State *state, View *view, BoxArray *box_array)
 			box->size.y = slot->size.y;
 			box->texture_size.x = slot->size.x;
 			box->texture_size.y = slot->size.y;
-			box->color.r = 1;
-			box->color.g = 1;
-			box->color.b = 1;
+			box->color = view->text_color;
 		}
 	}
 
