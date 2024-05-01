@@ -816,7 +816,11 @@ V2 last_mouse_down_location;
 
 	BoxArray box_array = {0};
 	box_array.capacity = 1024;
-	box_array.boxes = PushArray(frame_arena, Box, box_array.capacity);
+
+	id<MTLBuffer> box_array_buffer =
+	        [metal_layer.device newBufferWithLength:box_array.capacity * sizeof(Box)
+	                                        options:MTLResourceStorageModeShared];
+	box_array.boxes = box_array_buffer.contents;
 
 	StartBuild(&state);
 	BuildUI(&state);
@@ -851,7 +855,7 @@ V2 last_mouse_down_location;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	[encoder setVertexBytes:box_array.boxes length:box_array.count * sizeof(Box) atIndex:1];
+	[encoder setVertexBuffer:box_array_buffer offset:0 atIndex:1];
 
 	V2 texture_bounds = {0};
 	texture_bounds.x = 1024;
