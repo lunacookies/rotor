@@ -57,6 +57,17 @@ Pressed(Signal signal)
 	return signal.pressed;
 }
 
+function U64
+KeyFromString(String8 string, U64 seed)
+{
+	U64 result = seed;
+	for (U64 i = 0; i < string.count; i++)
+	{
+		result = ((result << 5) + result) + string.data[i];
+	}
+	return result;
+}
+
 typedef struct View View;
 struct View
 {
@@ -67,6 +78,8 @@ struct View
 
 	View *next_all;
 	View *prev_all;
+
+	U64 key;
 
 	ViewFlags flags;
 	V2 origin;
@@ -291,15 +304,17 @@ ViewPush(State *state, View *view)
 }
 
 function View *
-ViewFromKey(State *state, String8 key)
+ViewFromString(State *state, String8 string)
 {
 	View *result = 0;
+	U64 key = KeyFromString(string, state->current->key);
 
 	for (View *view = state->first_view_all; view != 0; view = view->next_all)
 	{
-		if (String8Match(view->string, key))
+		if (view->key == key)
 		{
 			result = view;
+			Assert(String8Match(view->string, string));
 			result->flags &= ~ViewFlags_FirstFrame;
 			break;
 		}
@@ -308,7 +323,8 @@ ViewFromKey(State *state, String8 key)
 	if (result == 0)
 	{
 		result = ViewAlloc(state);
-		result->string = key;
+		result->key = key;
+		result->string = string;
 		result->flags |= ViewFlags_FirstFrame;
 	}
 
@@ -390,7 +406,7 @@ SignalForView(State *state, View *view)
 function Signal
 Label(State *state, String8 string)
 {
-	View *view = ViewFromKey(state, string);
+	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawText;
 	return SignalForView(state, view);
 }
@@ -398,7 +414,7 @@ Label(State *state, String8 string)
 function Signal
 Button(State *state, String8 string)
 {
-	View *view = ViewFromKey(state, string);
+	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawText;
 	view->padding.x = 10;
 	view->padding.y = 2;
@@ -416,12 +432,12 @@ function Signal
 Checkbox(State *state, B32 *value, String8 string)
 {
 	MakeNextCurrent(state);
-	View *view = ViewFromKey(state, string);
+	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawBackground;
 	view->padding.x = 5;
 	view->padding.y = 5;
 
-	View *mark = ViewFromKey(state, Str8Lit("checkboxchild"));
+	View *mark = ViewFromString(state, Str8Lit("mark"));
 	mark->flags |= ViewFlags_DrawBackground;
 	mark->padding.x = 5;
 	mark->padding.y = 5;
@@ -578,7 +594,10 @@ BuildUI(State *state)
 
 	Button(state, Str8Lit("Another Button"));
 
-	Checkbox(state, &show_button_3, Str8Lit("checkbox"));
+	Checkbox(state, &show_button_3, Str8Lit("checkbox1"));
+
+	local_persist B32 checked = 0;
+	Checkbox(state, &checked, Str8Lit("checkbox2"));
 }
 
 function void
