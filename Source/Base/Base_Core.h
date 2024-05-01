@@ -55,6 +55,12 @@ union __attribute((aligned(16))) V3
 	};
 };
 
+typedef enum Axis2
+{
+	Axis2_X,
+	Axis2_Y,
+} Axis2;
+
 #define function static
 #define local_persist static
 

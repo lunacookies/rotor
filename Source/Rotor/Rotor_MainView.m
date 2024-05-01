@@ -87,6 +87,7 @@ struct View
 	V2 size;
 	V2 padding;
 	F32 child_gap;
+	Axis2 child_layout_axis;
 	V3 color;
 	V3 text_color;
 	String8 string;
@@ -243,6 +244,7 @@ ViewAlloc(State *state)
 		state->last_view_all->next_all = result;
 	}
 
+	result->child_layout_axis = Axis2_Y;
 	result->prev_all = state->last_view_all;
 	state->last_view_all = result;
 	return result;
@@ -460,6 +462,9 @@ Checkbox(State *state, B32 *value, String8 string)
 	View *label = ViewFromString(state, Str8Lit("label"));
 	MakeParentCurrent(state);
 
+	view->child_layout_axis = Axis2_X;
+	view->child_gap = 5;
+
 	box->flags |= ViewFlags_DrawBackground;
 	box->padding.x = 5;
 	box->padding.y = 5;
@@ -538,7 +543,7 @@ PruneUnusedViews(State *state)
 }
 
 function void
-LayoutView(State *state, View *view, V2 *current_position)
+LayoutView(State *state, View *view, V2 origin)
 {
 	MemoryZeroStruct(&view->rasterized_line);
 	if (view->flags & ViewFlags_DrawText)
@@ -547,10 +552,10 @@ LayoutView(State *state, View *view, V2 *current_position)
 		        state->glyph_atlas, state->font);
 	}
 
-	view->origin_target = *current_position;
+	view->origin_target = origin;
 	if (view->flags & ViewFlags_FirstFrame)
 	{
-		view->origin = *current_position;
+		view->origin = origin;
 	}
 	else
 	{
@@ -558,33 +563,64 @@ LayoutView(State *state, View *view, V2 *current_position)
 		view->origin.y += (view->origin_target.y - view->origin.y) * 0.1f;
 	}
 
-	V2 start_position = *current_position;
-	current_position->x += view->padding.x;
-	current_position->y += view->padding.y;
+	V2 start_position = origin;
+	V2 current_position = origin;
+	current_position.x += view->padding.x;
+	current_position.y += view->padding.y;
 
-	current_position->y += RoundF32(view->rasterized_line.bounds.y);
+	current_position.y += RoundF32(view->rasterized_line.bounds.y);
 
-	F32 content_width = RoundF32(view->rasterized_line.bounds.x);
+	V2 content_size_max = {0};
+	content_size_max.x = RoundF32(view->rasterized_line.bounds.x);
+	content_size_max.y = RoundF32(view->rasterized_line.bounds.y);
 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
 		LayoutView(state, child, current_position);
-		current_position->y += view->child_gap;
-		content_width = Max(content_width, child->size.x);
+		content_size_max.x = Max(content_size_max.x, child->size.x);
+		content_size_max.y = Max(content_size_max.y, child->size.y);
+
+		switch (view->child_layout_axis)
+		{
+			case Axis2_X:
+			{
+				current_position.x += child->size.x + view->child_gap;
+			}
+			break;
+
+			case Axis2_Y:
+			{
+				current_position.y += child->size.y + view->child_gap;
+			}
+			break;
+		}
 	}
 
-	current_position->y += view->padding.y;
-	current_position->x = start_position.x;
+	current_position.y += view->padding.y;
 
-	view->size.x = content_width + view->padding.x * 2;
-	view->size.y = current_position->y - start_position.y;
+	switch (view->child_layout_axis)
+	{
+		case Axis2_X:
+		{
+			view->size.x = current_position.x - start_position.x;
+			view->size.y = content_size_max.y + view->padding.y * 2;
+		}
+		break;
+
+		case Axis2_Y:
+		{
+			view->size.x = content_size_max.x + view->padding.x * 2;
+			view->size.y = current_position.y - start_position.y;
+		}
+		break;
+	}
 }
 
 function void
 LayoutUI(State *state)
 {
-	V2 current_position = {0};
-	LayoutView(state, state->root, &current_position);
+	V2 origin = {0};
+	LayoutView(state, state->root, origin);
 }
 
 function void
