@@ -67,6 +67,7 @@ typedef enum Axis2
 
 #define Min(x, y) (((x) < (y)) ? (x) : (y))
 #define Max(x, y) (((x) > (y)) ? (x) : (y))
+#define Clamp(x, min, max) Min(Max((x), (min)), (max))
 
 #define CeilF32 ceilf
 #define CeilF64 ceil

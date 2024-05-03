@@ -43,6 +43,8 @@ struct Signal
 	V2 location;
 	B32 clicked;
 	B32 pressed;
+	B32 dragged;
+	V2 drag_distance;
 };
 
 function B32
@@ -55,6 +57,12 @@ function B32
 Pressed(Signal signal)
 {
 	return signal.pressed;
+}
+
+function B32
+Dragged(Signal signal)
+{
+	return signal.dragged;
 }
 
 function U64
@@ -87,6 +95,7 @@ struct View
 	V2 origin_velocity;
 	V2 size;
 	V2 size_target;
+	V2 size_minimum;
 	V2 size_velocity;
 	V2 padding;
 	F32 child_gap;
@@ -111,7 +120,6 @@ struct Event
 {
 	Event *next;
 	V2 location;
-	V2 last_mouse_down_location;
 	EventKind kind;
 };
 
@@ -125,7 +133,11 @@ struct State
 	View *last_view_all;
 	View *first_free_view;
 
-	Event *events;
+	Event *first_event;
+	Event *last_event;
+	V2 last_mouse_down_location;
+	V2 last_mouse_drag_location;
+
 	Arena *arena;
 	Arena *frame_arena;
 	GlyphAtlas *glyph_atlas;
@@ -345,12 +357,9 @@ SignalForView(State *state, View *view)
 	Signal result = {0};
 	result.pressed = view->pressed;
 
-	for (Event *event = state->events; event != 0; event = event->next)
+	for (Event *event = state->first_event; event != 0; event = event->next)
 	{
-		if (event->kind == EventKind_MouseUp)
-		{
-			result.pressed = 0;
-		}
+		result.location = event->location;
 
 		B32 in_bounds = event->location.x >= view->origin.x &&
 		                event->location.y >= view->origin.y &&
@@ -358,29 +367,17 @@ SignalForView(State *state, View *view)
 		                event->location.y <= view->origin.y + view->size.y;
 
 		B32 last_mouse_down_in_bounds =
-		        event->last_mouse_down_location.x >= view->origin.x &&
-		        event->last_mouse_down_location.y >= view->origin.y &&
-		        event->last_mouse_down_location.x <= view->origin.x + view->size.x &&
-		        event->last_mouse_down_location.y <= view->origin.y + view->size.y;
-
-		if (event->kind == EventKind_MouseDragged && !in_bounds)
-		{
-			result.pressed = 0;
-			continue;
-		}
-
-		if (!in_bounds)
-		{
-			continue;
-		}
-
-		result.location = event->location;
+		        state->last_mouse_down_location.x >= view->origin.x &&
+		        state->last_mouse_down_location.y >= view->origin.y &&
+		        state->last_mouse_down_location.x <= view->origin.x + view->size.x &&
+		        state->last_mouse_down_location.y <= view->origin.y + view->size.y;
 
 		switch (event->kind)
 		{
 			case EventKind_MouseUp:
 			{
-				if (last_mouse_down_in_bounds)
+				result.pressed = 0;
+				if (in_bounds && last_mouse_down_in_bounds)
 				{
 					result.clicked = 1;
 				}
@@ -389,7 +386,12 @@ SignalForView(State *state, View *view)
 
 			case EventKind_MouseDown:
 			{
-				result.pressed = 1;
+				if (in_bounds)
+				{
+					result.pressed = 1;
+					state->last_mouse_drag_location = event->location;
+				}
+				state->last_mouse_down_location = event->location;
 			}
 			break;
 
@@ -397,7 +399,21 @@ SignalForView(State *state, View *view)
 			{
 				if (last_mouse_down_in_bounds)
 				{
-					result.pressed = 1;
+					result.dragged = 1;
+					result.drag_distance.x += event->location.x -
+					                          state->last_mouse_drag_location.x;
+					result.drag_distance.y += event->location.y -
+					                          state->last_mouse_drag_location.y;
+					if (in_bounds)
+					{
+						result.pressed = 1;
+					}
+					state->last_mouse_drag_location = event->location;
+				}
+
+				if (!in_bounds)
+				{
+					result.pressed = 0;
 				}
 			}
 			break;
@@ -481,7 +497,6 @@ Checkbox(State *state, B32 *value, String8 string)
 	label->text_color.b = 1;
 
 	Signal signal = SignalForView(state, view);
-	SignalForView(state, box); // calculate pressed state
 	if (Clicked(signal))
 	{
 		*value = !*value;
@@ -537,6 +552,66 @@ Checkbox(State *state, B32 *value, String8 string)
 	return signal;
 }
 
+function Signal
+SliderF32(State *state, F32 *value, F32 minimum, F32 maximum, String8 string)
+{
+	MakeNextCurrent(state);
+	View *view = ViewFromString(state, string);
+
+	MakeNextCurrent(state);
+	View *track = ViewFromString(state, Str8Lit("track"));
+	View *thumb = ViewFromString(state, Str8Lit("thumb"));
+	MakeParentCurrent(state);
+
+	View *label = ViewFromString(state, Str8Lit("label"));
+
+	MakeParentCurrent(state);
+
+	V2 size = {0};
+	size.x = 200;
+	size.y = 20;
+
+	view->child_layout_axis = Axis2_X;
+	view->child_gap = 10;
+	track->flags |= ViewFlags_DrawBackground;
+	track->size_minimum = size;
+	track->color.r = 0;
+	track->color.g = 0;
+	track->color.b = 0;
+	thumb->flags |= ViewFlags_DrawBackground;
+	thumb->size_minimum = size;
+	thumb->size_minimum.x *= (*value - minimum) / (maximum - minimum);
+	label->flags |= ViewFlags_DrawText;
+	label->text_color.r = 1;
+	label->text_color.g = 1;
+	label->text_color.b = 1;
+
+	Signal signal = SignalForView(state, view);
+
+	if (Pressed(signal))
+	{
+		thumb->color.r = 1;
+		thumb->color.g = 1;
+		thumb->color.b = 1;
+	}
+	else
+	{
+		thumb->color.r = 0.7f;
+		thumb->color.g = 0.7f;
+		thumb->color.b = 0.7f;
+	}
+
+	if (Dragged(signal))
+	{
+		*value += MixF32(0, maximum - minimum, signal.drag_distance.x / size.x);
+		*value = Clamp(*value, minimum, maximum);
+	}
+
+	label->string = String8Format(state->frame_arena, "%.5f", *value);
+
+	return signal;
+}
+
 function void
 PruneUnusedViews(State *state)
 {
@@ -554,10 +629,17 @@ PruneUnusedViews(State *state)
 }
 
 global B32 use_springs = 1;
+global B32 use_animations = 1;
 
 function void
 StepAnimation(F32 *x, F32 *dx, F32 x_target, B32 is_size)
 {
+	if (!use_animations)
+	{
+		*x = x_target;
+		return;
+	}
+
 	if (!use_springs)
 	{
 		*x += (x_target - *x) * 0.1f;
@@ -646,6 +728,8 @@ LayoutView(State *state, View *view, V2 origin)
 		}
 		break;
 	}
+	view->size_target.x = Max(view->size_target.x, view->size_minimum.x);
+	view->size_target.y = Max(view->size_target.y, view->size_minimum.y);
 
 	// Step origin and size animations towards their targets.
 	if (view->flags & ViewFlags_FirstFrame)
@@ -685,7 +769,8 @@ EndBuild(State *state)
 {
 	PruneUnusedViews(state);
 	LayoutUI(state);
-	state->events = 0;
+	state->first_event = 0;
+	state->last_event = 0;
 }
 
 function void
@@ -724,7 +809,15 @@ BuildUI(State *state)
 
 	local_persist B32 checked = 0;
 	Checkbox(state, &checked, Str8Lit("Another Checkbox"));
-	Checkbox(state, &use_springs, Str8Lit("Animate Using Springs"));
+	Signal springs_signal = Checkbox(state, &use_springs, Str8Lit("Animate Using Springs"));
+	Checkbox(state, &use_animations, Str8Lit("Animate"));
+	if (Clicked(springs_signal) && use_springs)
+	{
+		use_animations = 1;
+	}
+
+	local_persist F32 value = 15;
+	SliderF32(state, &value, 10, 20, Str8Lit("Slider"));
 }
 
 function void
@@ -799,7 +892,6 @@ CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
 State state;
-V2 last_mouse_down_location;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -1025,17 +1117,19 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	location.x = (F32)location_ns_point.x;
 	location.y = (F32)location_ns_point.y;
 
-	if (kind == EventKind_MouseDown)
-	{
-		last_mouse_down_location = location;
-	}
-
 	Event *event = PushStruct(frame_arena, Event);
 	event->kind = kind;
 	event->location = location;
-	event->last_mouse_down_location = last_mouse_down_location;
-	event->next = state.events;
-	state.events = event;
+	if (state.first_event == 0)
+	{
+		Assert(state.last_event == 0);
+		state.first_event = event;
+	}
+	else
+	{
+		state.last_event->next = event;
+	}
+	state.last_event = event;
 }
 
 @end

@@ -9,3 +9,4 @@ struct String8
 #define Str8VArg(s) (S32)(s).count, (s).data
 
 function B32 String8Match(String8 a, String8 b);
+function String8 String8Format(Arena *arena, char *fmt, ...);
