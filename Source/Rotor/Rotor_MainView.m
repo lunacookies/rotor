@@ -922,6 +922,14 @@ State state;
 - (instancetype)initWithFrame:(NSRect)frame
 {
 	self = [super initWithFrame:frame];
+
+	setenv("MTL_HUD_ENABLED", "1", 1);
+	setenv("MTL_SHADER_VALIDATION", "1", 1);
+	setenv("MTL_DEBUG_LAYER", "1", 1);
+	setenv("MTL_DEBUG_LAYER_WARNING_MODE", "assert", 1);
+	setenv("MTL_DEBUG_LAYER_VALIDATE_LOAD_ACTIONS", "1", 1);
+	setenv("MTL_DEBUG_LAYER_VALIDATE_STORE_ACTIONS", "1", 1);
+
 	self.wantsLayer = YES;
 	self.layer = [CAMetalLayer layer];
 	metal_layer = (CAMetalLayer *)self.layer;
