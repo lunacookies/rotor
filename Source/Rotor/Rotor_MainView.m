@@ -553,6 +553,89 @@ Checkbox(State *state, B32 *value, String8 string)
 }
 
 function Signal
+RadioButton(State *state, U32 *selection, U32 option, String8 string)
+{
+	MakeNextCurrent(state);
+	View *view = ViewFromString(state, string);
+
+	MakeNextCurrent(state);
+	View *box = ViewFromString(state, Str8Lit("box"));
+	View *mark = ViewFromString(state, Str8Lit("mark"));
+	MakeParentCurrent(state);
+
+	View *label = ViewFromString(state, Str8Lit("label"));
+	MakeParentCurrent(state);
+
+	view->child_layout_axis = Axis2_X;
+	view->child_gap = 5;
+	box->flags |= ViewFlags_DrawBackground;
+	mark->flags |= ViewFlags_DrawBackground;
+	mark->color.r = 1;
+	mark->color.g = 1;
+	mark->color.b = 1;
+	label->flags |= ViewFlags_DrawText;
+	label->string = string;
+	label->text_color.r = 1;
+	label->text_color.g = 1;
+	label->text_color.b = 1;
+
+	Signal signal = SignalForView(state, view);
+	if (Clicked(signal))
+	{
+		*selection = option;
+	}
+
+	if (*selection == option)
+	{
+		if (Pressed(signal))
+		{
+			box->color.r = 0.2f;
+			box->color.g = 0.7f;
+			box->color.b = 1;
+			box->padding.x = 6;
+			box->padding.y = 6;
+			mark->padding.x = 4;
+			mark->padding.y = 4;
+		}
+		else
+		{
+			box->color.r = 0;
+			box->color.g = 0.5f;
+			box->color.b = 1;
+			box->padding.x = 5;
+			box->padding.y = 5;
+			mark->padding.x = 5;
+			mark->padding.y = 5;
+		}
+	}
+	else
+	{
+		if (Pressed(signal))
+		{
+			box->color.r = 0.4f;
+			box->color.g = 0.4f;
+			box->color.b = 0.4f;
+			box->padding.x = 8;
+			box->padding.y = 8;
+			mark->padding.x = 2;
+			mark->padding.y = 2;
+		}
+		else
+		{
+			box->color.r = 0.1f;
+			box->color.g = 0.1f;
+			box->color.b = 0.1f;
+			box->padding.x = 10;
+			box->padding.y = 10;
+			mark->padding.x = 0;
+			mark->padding.y = 0;
+		}
+	}
+
+	return signal;
+}
+
+function Signal
 SliderF32(State *state, F32 *value, F32 minimum, F32 maximum, String8 string)
 {
 	MakeNextCurrent(state);
@@ -818,6 +901,11 @@ BuildUI(State *state)
 
 	local_persist F32 value = 15;
 	SliderF32(state, &value, 10, 20, Str8Lit("Slider"));
+
+	local_persist U32 selection = 0;
+	RadioButton(state, &selection, 0, Str8Lit("Foo"));
+	RadioButton(state, &selection, 1, Str8Lit("Bar"));
+	RadioButton(state, &selection, 2, Str8Lit("Baz"));
 }
 
 function void
