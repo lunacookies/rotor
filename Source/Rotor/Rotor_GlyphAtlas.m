@@ -3,8 +3,7 @@ const V2U64 glyph_atlas_padding = {2, 2};
 function void
 GlyphAtlasInit(GlyphAtlas *atlas, Arena *arena, id<MTLDevice> device, F32 scale_factor)
 {
-	atlas->size.x = 1024;
-	atlas->size.y = 1024;
+	atlas->size = v2u64(1024, 1024);
 
 	atlas->size_pixels.x = (U64)CeilF32(atlas->size.x * scale_factor);
 	atlas->size_pixels.y = (U64)CeilF32(atlas->size.y * scale_factor);

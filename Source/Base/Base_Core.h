@@ -55,6 +55,10 @@ union __attribute((aligned(16))) V3
 	};
 };
 
+#define v2(v0, v1) ((V2){.x = (v0), .y = (v1)})
+#define v2u64(v0, v1) ((V2U64){.x = (v0), .y = (v1)})
+#define v3(v0, v1, v2) ((V3){.x = (v0), .y = (v1), .z = (v2)})
+
 typedef enum Axis2
 {
 	Axis2_X,

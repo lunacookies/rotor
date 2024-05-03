@@ -430,9 +430,7 @@ Label(State *state, String8 string)
 	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawText;
 	view->string = string;
-	view->text_color.r = 1;
-	view->text_color.g = 1;
-	view->text_color.b = 1;
+	view->text_color = v3(1, 1, 1);
 	return SignalForView(state, view);
 }
 
@@ -442,28 +440,19 @@ Button(State *state, String8 string)
 	View *view = ViewFromString(state, string);
 	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawText;
 	view->string = string;
-	view->padding.x = 10;
-	view->padding.y = 2;
+	view->padding = v2(10, 2);
 
 	Signal signal = SignalForView(state, view);
 
 	if (Pressed(signal))
 	{
-		view->color.r = 0.7f;
-		view->color.g = 0.7f;
-		view->color.b = 0.7f;
-		view->text_color.r = 0;
-		view->text_color.g = 0;
-		view->text_color.b = 0;
+		view->color = v3(0.7f, 0.7f, 0.7f);
+		view->text_color = v3(0, 0, 0);
 	}
 	else
 	{
-		view->color.r = 0.1f;
-		view->color.g = 0.1f;
-		view->color.b = 0.1f;
-		view->text_color.r = 1;
-		view->text_color.g = 1;
-		view->text_color.b = 1;
+		view->color = v3(0.1f, 0.1f, 0.1f);
+		view->text_color = v3(1, 1, 1);
 	}
 
 	return signal;
@@ -487,14 +476,10 @@ Checkbox(State *state, B32 *value, String8 string)
 	view->child_gap = 5;
 	box->flags |= ViewFlags_DrawBackground;
 	mark->flags |= ViewFlags_DrawBackground;
-	mark->color.r = 1;
-	mark->color.g = 1;
-	mark->color.b = 1;
+	mark->color = v3(1, 1, 1);
 	label->flags |= ViewFlags_DrawText;
 	label->string = string;
-	label->text_color.r = 1;
-	label->text_color.g = 1;
-	label->text_color.b = 1;
+	label->text_color = v3(1, 1, 1);
 
 	Signal signal = SignalForView(state, view);
 	if (Clicked(signal))
@@ -506,46 +491,30 @@ Checkbox(State *state, B32 *value, String8 string)
 	{
 		if (Pressed(signal))
 		{
-			box->color.r = 0.2f;
-			box->color.g = 0.7f;
-			box->color.b = 1;
-			box->padding.x = 6;
-			box->padding.y = 6;
-			mark->padding.x = 4;
-			mark->padding.y = 4;
+			box->color = v3(0.2f, 0.7f, 1);
+			box->padding = v2(6, 6);
+			mark->padding = v2(4, 4);
 		}
 		else
 		{
-			box->color.r = 0;
-			box->color.g = 0.5f;
-			box->color.b = 1;
-			box->padding.x = 5;
-			box->padding.y = 5;
-			mark->padding.x = 5;
-			mark->padding.y = 5;
+			box->color = v3(0, 0.5f, 1);
+			box->padding = v2(5, 5);
+			mark->padding = v2(5, 5);
 		}
 	}
 	else
 	{
 		if (Pressed(signal))
 		{
-			box->color.r = 0.4f;
-			box->color.g = 0.4f;
-			box->color.b = 0.4f;
-			box->padding.x = 8;
-			box->padding.y = 8;
-			mark->padding.x = 2;
-			mark->padding.y = 2;
+			box->color = v3(0.4f, 0.4f, 0.4f);
+			box->padding = v2(8, 8);
+			mark->padding = v2(2, 2);
 		}
 		else
 		{
-			box->color.r = 0.1f;
-			box->color.g = 0.1f;
-			box->color.b = 0.1f;
-			box->padding.x = 10;
-			box->padding.y = 10;
-			mark->padding.x = 0;
-			mark->padding.y = 0;
+			box->color = v3(0.1f, 0.1f, 0.1f);
+			box->padding = v2(10, 10);
+			mark->padding = v2(0, 0);
 		}
 	}
 
@@ -570,14 +539,10 @@ RadioButton(State *state, U32 *selection, U32 option, String8 string)
 	view->child_gap = 5;
 	box->flags |= ViewFlags_DrawBackground;
 	mark->flags |= ViewFlags_DrawBackground;
-	mark->color.r = 1;
-	mark->color.g = 1;
-	mark->color.b = 1;
+	mark->color = v3(1, 1, 1);
 	label->flags |= ViewFlags_DrawText;
 	label->string = string;
-	label->text_color.r = 1;
-	label->text_color.g = 1;
-	label->text_color.b = 1;
+	label->text_color = v3(1, 1, 1);
 
 	Signal signal = SignalForView(state, view);
 	if (Clicked(signal))
@@ -589,46 +554,30 @@ RadioButton(State *state, U32 *selection, U32 option, String8 string)
 	{
 		if (Pressed(signal))
 		{
-			box->color.r = 0.2f;
-			box->color.g = 0.7f;
-			box->color.b = 1;
-			box->padding.x = 6;
-			box->padding.y = 6;
-			mark->padding.x = 4;
-			mark->padding.y = 4;
+			box->color = v3(0.2f, 0.7f, 1);
+			box->padding = v2(6, 6);
+			mark->padding = v2(4, 4);
 		}
 		else
 		{
-			box->color.r = 0;
-			box->color.g = 0.5f;
-			box->color.b = 1;
-			box->padding.x = 5;
-			box->padding.y = 5;
-			mark->padding.x = 5;
-			mark->padding.y = 5;
+			box->color = v3(0, 0.5f, 1);
+			box->padding = v2(5, 5);
+			mark->padding = v2(5, 5);
 		}
 	}
 	else
 	{
 		if (Pressed(signal))
 		{
-			box->color.r = 0.4f;
-			box->color.g = 0.4f;
-			box->color.b = 0.4f;
-			box->padding.x = 8;
-			box->padding.y = 8;
-			mark->padding.x = 2;
-			mark->padding.y = 2;
+			box->color = v3(0.4f, 0.4f, 0.4f);
+			box->padding = v2(8, 8);
+			mark->padding = v2(2, 2);
 		}
 		else
 		{
-			box->color.r = 0.1f;
-			box->color.g = 0.1f;
-			box->color.b = 0.1f;
-			box->padding.x = 10;
-			box->padding.y = 10;
-			mark->padding.x = 0;
-			mark->padding.y = 0;
+			box->color = v3(0.1f, 0.1f, 0.1f);
+			box->padding = v2(10, 10);
+			mark->padding = v2(0, 0);
 		}
 	}
 
@@ -650,38 +599,28 @@ SliderF32(State *state, F32 *value, F32 minimum, F32 maximum, String8 string)
 
 	MakeParentCurrent(state);
 
-	V2 size = {0};
-	size.x = 200;
-	size.y = 20;
+	V2 size = v2(200, 20);
 
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 10;
 	track->flags |= ViewFlags_DrawBackground;
 	track->size_minimum = size;
-	track->color.r = 0;
-	track->color.g = 0;
-	track->color.b = 0;
+	track->color = v3(0, 0, 0);
 	thumb->flags |= ViewFlags_DrawBackground;
 	thumb->size_minimum = size;
 	thumb->size_minimum.x *= (*value - minimum) / (maximum - minimum);
 	label->flags |= ViewFlags_DrawText;
-	label->text_color.r = 1;
-	label->text_color.g = 1;
-	label->text_color.b = 1;
+	label->text_color = v3(1, 1, 1);
 
 	Signal signal = SignalForView(state, view);
 
 	if (Pressed(signal))
 	{
-		thumb->color.r = 1;
-		thumb->color.g = 1;
-		thumb->color.b = 1;
+		thumb->color = v3(1, 1, 1);
 	}
 	else
 	{
-		thumb->color.r = 0.7f;
-		thumb->color.g = 0.7f;
-		thumb->color.b = 0.7f;
+		thumb->color = v3(0.7f, 0.7f, 0.7f);
 	}
 
 	if (Dragged(signal))
@@ -840,8 +779,7 @@ function void
 StartBuild(State *state)
 {
 	state->root = ViewAlloc(state);
-	state->root->padding.x = 20;
-	state->root->padding.y = 20;
+	state->root->padding = v2(20, 20);
 	state->root->child_gap = 10;
 	state->current = state->root;
 	state->build_index++;
@@ -1082,9 +1020,7 @@ State state;
 
 	[encoder setVertexBuffer:box_array_buffer offset:0 atIndex:1];
 
-	V2 texture_bounds = {0};
-	texture_bounds.x = 1024;
-	texture_bounds.y = 1024;
+	V2 texture_bounds = v2(1024, 1024);
 	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:2];
 
 	V2 bounds = {0};
