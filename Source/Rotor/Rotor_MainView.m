@@ -822,16 +822,18 @@ LayoutView(State *state, View *view, V2 origin)
 }
 
 function void
-LayoutUI(State *state)
+LayoutUI(State *state, V2 viewport_size)
 {
-	V2 origin = {0};
-	LayoutView(state, state->root, origin);
+	state->root->size_minimum = viewport_size;
+	LayoutView(state, state->root, v2(0, 0));
 }
 
 function void
 StartBuild(State *state)
 {
 	state->root = ViewAlloc(state);
+	state->root->flags |= ViewFlags_FirstFrame | ViewFlags_DrawBackground;
+	state->root->color = v3(0.25, 0.25, 0.25);
 	state->root->padding = v2(20, 20);
 	state->root->child_gap = 10;
 	state->current = state->root;
@@ -839,10 +841,10 @@ StartBuild(State *state)
 }
 
 function void
-EndBuild(State *state)
+EndBuild(State *state, V2 viewport_size)
 {
 	PruneUnusedViews(state);
-	LayoutUI(state);
+	LayoutUI(state, viewport_size);
 	state->first_event = 0;
 	state->last_event = 0;
 }
@@ -1044,7 +1046,11 @@ State state;
 
 	metal_layer.delegate = self;
 	metal_layer.device = MTLCreateSystemDefaultDevice();
+	metal_layer.pixelFormat = MTLPixelFormatRGBA16Float;
 	command_queue = [metal_layer.device newCommandQueue];
+
+	metal_layer.colorspace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
+	Assert(metal_layer.colorspace);
 
 	NSError *error = nil;
 
@@ -1099,13 +1105,13 @@ State state;
 	                                        options:MTLResourceStorageModeShared];
 	box_array.boxes = box_array_buffer.contents;
 
-	StartBuild(&state);
-	BuildUI(&state);
-	EndBuild(&state);
-
 	V2 viewport_size = {0};
 	viewport_size.x = (F32)self.bounds.size.width;
 	viewport_size.y = (F32)self.bounds.size.height;
+
+	StartBuild(&state);
+	BuildUI(&state);
+	EndBuild(&state, viewport_size);
 	RenderUI(&state, viewport_size, &box_array);
 
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
@@ -1117,7 +1123,7 @@ State state;
 	descriptor.colorAttachments[0].resolveTexture = drawable.texture;
 	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
 	descriptor.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
-	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.25, 0.25, 0.25, 1);
+	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(1, 1, 0, 1);
 
 	id<MTLRenderCommandEncoder> encoder =
 	        [command_buffer renderCommandEncoderWithDescriptor:descriptor];

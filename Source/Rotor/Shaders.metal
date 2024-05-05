@@ -39,6 +39,19 @@ struct RasterizerData
 	B32 untextured;
 };
 
+F32
+SRGBLinearFromGamma(F32 x)
+{
+	if (x <= 0.04045)
+	{
+		return x / 12.92;
+	}
+	else
+	{
+		return metal::pow((x + 0.055) / 1.055, 2.4);
+	}
+}
+
 vertex RasterizerData
 VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant V2 *positions,
         constant Box *boxes, constant V2 *texture_bounds, constant V2 *bounds)
@@ -59,7 +72,10 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	        result.texture_coordinates * (box.texture_size / *texture_bounds) +
 	        (box.texture_origin / *texture_bounds);
 
-	result.color = box.color;
+	result.color.r = SRGBLinearFromGamma(box.color.r);
+	result.color.g = SRGBLinearFromGamma(box.color.g);
+	result.color.b = SRGBLinearFromGamma(box.color.b);
+
 	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
 
 	return result;
