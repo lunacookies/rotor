@@ -921,8 +921,16 @@ RenderView(State *state, View *view, V2 clip_origin, V2 clip_size, BoxArray *box
 {
 	if (view->flags & ViewFlags_Clip)
 	{
-		clip_origin = view->origin;
-		clip_size = view->size;
+		V2 parent_clip_origin = clip_origin;
+		V2 parent_clip_size = clip_size;
+		clip_origin.x = Max(parent_clip_origin.x, view->origin.x);
+		clip_origin.y = Max(parent_clip_origin.y, view->origin.y);
+		clip_size.x = Min(parent_clip_origin.x + parent_clip_size.x,
+		                      view->origin.x + view->size.x) -
+		              clip_origin.x;
+		clip_size.y = Min(parent_clip_origin.y + parent_clip_size.y,
+		                      view->origin.y + view->size.y) -
+		              clip_origin.y;
 	}
 
 	BoxRenderChunk *chunk = 0;
