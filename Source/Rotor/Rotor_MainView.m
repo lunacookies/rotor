@@ -12,12 +12,25 @@ struct Box
 	V2 texture_size;
 };
 
+typedef struct BoxRenderChunk BoxRenderChunk;
+struct BoxRenderChunk
+{
+	BoxRenderChunk *next;
+	U64 start;
+	U64 count;
+	V2 clip_origin;
+	V2 clip_size;
+};
+
 typedef struct BoxArray BoxArray;
 struct BoxArray
 {
 	Box *boxes;
 	U64 count;
 	U64 capacity;
+
+	BoxRenderChunk *first_chunk;
+	BoxRenderChunk *last_chunk;
 };
 
 typedef struct RasterizedLine RasterizedLine;
@@ -35,6 +48,7 @@ enum : ViewFlags
 	ViewFlags_FirstFrame = (1 << 0),
 	ViewFlags_DrawBackground = (1 << 1),
 	ViewFlags_DrawText = (1 << 2),
+	ViewFlags_Clip = (1 << 3),
 };
 
 typedef struct Signal Signal;
@@ -44,7 +58,9 @@ struct Signal
 	B32 clicked;
 	B32 pressed;
 	B32 dragged;
+	B32 scrolled;
 	V2 drag_distance;
+	V2 scroll_distance;
 };
 
 function B32
@@ -63,6 +79,12 @@ function B32
 Dragged(Signal signal)
 {
 	return signal.dragged;
+}
+
+function B32
+Scrolled(Signal signal)
+{
+	return signal.scrolled;
 }
 
 function U64
@@ -100,6 +122,7 @@ struct View
 	V2 padding;
 	F32 child_gap;
 	Axis2 child_layout_axis;
+	V2 child_offset;
 	V3 color;
 	V3 text_color;
 	String8 string;
@@ -113,6 +136,7 @@ typedef enum EventKind
 	EventKind_MouseUp = 1,
 	EventKind_MouseDown,
 	EventKind_MouseDragged,
+	EventKind_Scroll,
 } EventKind;
 
 typedef struct Event Event;
@@ -120,6 +144,7 @@ struct Event
 {
 	Event *next;
 	V2 location;
+	V2 scroll_distance;
 	EventKind kind;
 };
 
@@ -417,6 +442,16 @@ SignalForView(State *state, View *view)
 				}
 			}
 			break;
+
+			case EventKind_Scroll:
+			{
+				if (in_bounds)
+				{
+					result.scrolled = 1;
+					result.scroll_distance = event->scroll_distance;
+				}
+			}
+			break;
 		}
 	}
 
@@ -634,6 +669,24 @@ SliderF32(State *state, F32 *value, F32 minimum, F32 maximum, String8 string)
 	return signal;
 }
 
+function Signal
+Scrollable(State *state, String8 string)
+{
+	View *view = ViewFromString(state, string);
+	view->flags |= ViewFlags_Clip | ViewFlags_DrawBackground;
+	view->color = v3(1, 0, 0);
+	view->size_minimum = v2(200, 200);
+
+	Signal signal = SignalForView(state, view);
+	if (Scrolled(signal))
+	{
+		view->child_offset.x += signal.scroll_distance.x;
+		view->child_offset.y += signal.scroll_distance.y;
+	}
+
+	return signal;
+}
+
 function void
 PruneUnusedViews(State *state)
 {
@@ -699,8 +752,8 @@ LayoutView(State *state, View *view, V2 origin)
 
 	V2 start_position = origin;
 	V2 current_position = origin;
-	current_position.x += view->padding.x;
-	current_position.y += view->padding.y;
+	current_position.x += view->padding.x + view->child_offset.x;
+	current_position.y += view->padding.y + view->child_offset.y;
 
 	current_position.y += RoundF32(view->rasterized_line.bounds.y);
 
@@ -844,15 +897,67 @@ BuildUI(State *state)
 	RadioButton(state, &selection, 0, Str8Lit("Foo"));
 	RadioButton(state, &selection, 1, Str8Lit("Bar"));
 	RadioButton(state, &selection, 2, Str8Lit("Baz"));
+
+	MakeNextCurrent(state);
+	Scrollable(state, Str8Lit("scrollable"));
+	Button(state, Str8Lit("some button 1"));
+	Button(state, Str8Lit("some button 2"));
+	Button(state, Str8Lit("some button 3"));
+	Button(state, Str8Lit("some button 4"));
+	Button(state, Str8Lit("some button 5"));
+	Button(state, Str8Lit("some button 6"));
+	Button(state, Str8Lit("some button 7"));
+	Button(state, Str8Lit("some button 8"));
+	Button(state, Str8Lit("some button 9"));
+	Button(state, Str8Lit("some button 10"));
+	Button(state, Str8Lit("some button 11"));
+	MakeParentCurrent(state);
 }
 
 function void
-RenderView(State *state, View *view, BoxArray *box_array)
+RenderView(State *state, View *view, V2 clip_origin, V2 clip_size, BoxArray *box_array)
 {
+	if (view->flags & ViewFlags_Clip)
+	{
+		clip_origin = view->origin;
+		clip_size = view->size;
+	}
+
+	BoxRenderChunk *chunk = 0;
+
+	if (box_array->first_chunk == 0)
+	{
+		Assert(box_array->last_chunk == 0);
+		chunk = PushStruct(state->frame_arena, BoxRenderChunk);
+		box_array->first_chunk = chunk;
+		box_array->last_chunk = box_array->first_chunk;
+	}
+	else
+	{
+		if (box_array->last_chunk->clip_origin.x == clip_origin.x &&
+		        box_array->last_chunk->clip_origin.y == clip_origin.y &&
+		        box_array->last_chunk->clip_size.x == clip_size.x &&
+		        box_array->last_chunk->clip_size.y == clip_size.y)
+		{
+			chunk = box_array->last_chunk;
+		}
+		else
+		{
+			chunk = PushStruct(state->frame_arena, BoxRenderChunk);
+			chunk->start = box_array->count;
+			box_array->last_chunk->next = chunk;
+			box_array->last_chunk = chunk;
+		}
+	}
+
+	chunk->clip_origin = clip_origin;
+	chunk->clip_size = clip_size;
+
 	if (view->flags & ViewFlags_DrawBackground)
 	{
 		Box *bg_box = box_array->boxes + box_array->count;
 		box_array->count++;
+		chunk->count++;
 
 		bg_box->origin = view->origin;
 		bg_box->size = view->size;
@@ -879,6 +984,7 @@ RenderView(State *state, View *view, BoxArray *box_array)
 
 			Box *box = box_array->boxes + box_array->count;
 			box_array->count++;
+			chunk->count++;
 			Assert(box_array->count <= box_array->capacity);
 
 			box->origin = position;
@@ -894,14 +1000,14 @@ RenderView(State *state, View *view, BoxArray *box_array)
 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
-		RenderView(state, child, box_array);
+		RenderView(state, child, clip_origin, clip_size, box_array);
 	}
 }
 
 function void
-RenderUI(State *state, BoxArray *box_array)
+RenderUI(State *state, V2 viewport_size, BoxArray *box_array)
 {
-	RenderView(state, state->root, box_array);
+	RenderView(state, state->root, v2(0, 0), viewport_size, box_array);
 }
 
 @implementation MainView
@@ -997,7 +1103,10 @@ State state;
 	BuildUI(&state);
 	EndBuild(&state);
 
-	RenderUI(&state, &box_array);
+	V2 viewport_size = {0};
+	viewport_size.x = (F32)self.bounds.size.width;
+	viewport_size.y = (F32)self.bounds.size.height;
+	RenderUI(&state, viewport_size, &box_array);
 
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
@@ -1026,21 +1135,50 @@ State state;
 
 	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
 
-	[encoder setVertexBuffer:box_array_buffer offset:0 atIndex:1];
-
 	V2 texture_bounds = v2(1024, 1024);
 	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:2];
 
-	V2 bounds = {0};
-	bounds.x = (F32)self.bounds.size.width;
-	bounds.y = (F32)self.bounds.size.height;
-	[encoder setVertexBytes:&bounds length:sizeof(bounds) atIndex:3];
+	[encoder setVertexBytes:&viewport_size length:sizeof(viewport_size) atIndex:3];
 
 	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
-	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-	            vertexStart:0
-	            vertexCount:6
-	          instanceCount:box_array.count];
+
+	for (BoxRenderChunk *chunk = box_array.first_chunk; chunk != 0; chunk = chunk->next)
+	{
+		[encoder setVertexBuffer:box_array_buffer
+		                  offset:chunk->start * sizeof(Box)
+		                 atIndex:1];
+
+		V2 scissor_rect_p0 = chunk->clip_origin;
+		scissor_rect_p0.x = Clamp(scissor_rect_p0.x, 0, viewport_size.x);
+		scissor_rect_p0.y = Clamp(scissor_rect_p0.y, 0, viewport_size.y);
+
+		V2 scissor_rect_p1 = chunk->clip_origin;
+		scissor_rect_p1.x += chunk->clip_size.x;
+		scissor_rect_p1.y += chunk->clip_size.y;
+		scissor_rect_p1.x = Clamp(scissor_rect_p1.x, 0, viewport_size.x);
+		scissor_rect_p1.y = Clamp(scissor_rect_p1.y, 0, viewport_size.y);
+
+		V2 scissor_rect_origin = scissor_rect_p0;
+		V2 scissor_rect_size = {0};
+		scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
+		scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
+
+		F32 scale_factor = (F32)self.window.backingScaleFactor;
+
+		MTLScissorRect scissor_rect = {0};
+		scissor_rect.x = (U64)(scissor_rect_origin.x * scale_factor);
+		scissor_rect.y = (U64)(scissor_rect_origin.y * scale_factor);
+		scissor_rect.width = (U64)(scissor_rect_size.x * scale_factor);
+		scissor_rect.height = (U64)(scissor_rect_size.y * scale_factor);
+
+		[encoder setScissorRect:scissor_rect];
+
+		[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+		            vertexStart:0
+		            vertexCount:6
+		          instanceCount:chunk->count];
+	}
+
 	[encoder endEncoding];
 
 	[command_buffer presentDrawable:drawable];
@@ -1115,6 +1253,10 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 {
 	[self handleEvent:event];
 }
+- (void)scrollWheel:(NSEvent *)event
+{
+	[self handleEvent:event];
+}
 
 - (void)handleEvent:(NSEvent *)ns_event
 {
@@ -1141,6 +1283,12 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 			kind = EventKind_MouseDragged;
 		}
 		break;
+
+		case NSEventTypeScrollWheel:
+		{
+			kind = EventKind_Scroll;
+		}
+		break;
 	}
 
 	NSPoint location_ns_point = ns_event.locationInWindow;
@@ -1152,6 +1300,13 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	Event *event = PushStruct(frame_arena, Event);
 	event->kind = kind;
 	event->location = location;
+
+	if (kind == EventKind_Scroll)
+	{
+		event->scroll_distance.x = (F32)ns_event.scrollingDeltaX;
+		event->scroll_distance.y = (F32)ns_event.scrollingDeltaY;
+	}
+
 	if (state.first_event == 0)
 	{
 		Assert(state.last_event == 0);
