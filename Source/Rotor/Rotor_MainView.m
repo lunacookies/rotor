@@ -228,9 +228,9 @@ RasterizeLine(
 			CGGlyph glyph = glyphs[j];
 			GlyphAtlasSlot *slot = GlyphAtlasGet(glyph_atlas, run_font, glyph);
 
-			result->positions[glyph_index].x = (F32)glyph_positions[j].x;
+			result->positions[glyph_index].x = RoundF32((F32)glyph_positions[j].x);
 			result->positions[glyph_index].y =
-			        (F32)glyph_positions[j].y - slot->baseline;
+			        RoundF32((F32)glyph_positions[j].y - slot->baseline);
 			result->slots[glyph_index] = slot;
 
 			glyph_index++;
@@ -979,9 +979,9 @@ RenderView(State *state, View *view, V2 clip_origin, V2 clip_size, BoxArray *box
 		V2 text_origin = view->origin;
 		text_origin.x += view->padding.x;
 		text_origin.y += view->padding.y;
-		text_origin.y +=
-		        (view->rasterized_line.bounds.y + (F32)CTFontGetCapHeight(state->font)) *
-		        0.5f;
+		text_origin.y += RoundF32(view->rasterized_line.bounds.y +
+		                          (F32)CTFontGetCapHeight(state->font)) *
+		                 0.5f;
 
 		for (U64 glyph_index = 0; glyph_index < view->rasterized_line.glyph_count;
 		        glyph_index++)
