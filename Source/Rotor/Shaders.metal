@@ -53,9 +53,18 @@ SRGBLinearFromGamma(F32 x)
 }
 
 vertex RasterizerData
-VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant V2 *positions,
-        constant Box *boxes, constant V2 *texture_bounds, constant V2 *bounds)
+VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant Box *boxes,
+        constant V2 *texture_bounds, constant V2 *bounds)
 {
+	V2 positions[] = {
+	        {-1, 1},
+	        {-1, -1},
+	        {1, 1},
+	        {1, 1},
+	        {1, -1},
+	        {-1, -1},
+	};
+
 	V2 position = positions[vertex_id];
 	Box box = boxes[instance_id];
 

@@ -1138,21 +1138,10 @@ State state;
 
 	[encoder setRenderPipelineState:pipeline_state];
 
-	local_persist V2 positions[] = {
-	        {-1, 1},
-	        {-1, -1},
-	        {1, 1},
-	        {1, 1},
-	        {1, -1},
-	        {-1, -1},
-	};
-
-	[encoder setVertexBytes:positions length:sizeof(positions) atIndex:0];
-
 	V2 texture_bounds = v2(1024, 1024);
-	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:2];
+	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:1];
 
-	[encoder setVertexBytes:&viewport_size length:sizeof(viewport_size) atIndex:3];
+	[encoder setVertexBytes:&viewport_size length:sizeof(viewport_size) atIndex:2];
 
 	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 
@@ -1160,7 +1149,7 @@ State state;
 	{
 		[encoder setVertexBuffer:box_array_buffer
 		                  offset:chunk->start * sizeof(Box)
-		                 atIndex:1];
+		                 atIndex:0];
 
 		V2 scissor_rect_p0 = chunk->clip_origin;
 		scissor_rect_p0.x = Clamp(scissor_rect_p0.x, 0, viewport_size.x);
