@@ -242,29 +242,33 @@ RasterizeLine(
 	CFRelease(string);
 }
 
+State *state;
+
 function void
-StateInit(State *state, Arena *frame_arena, GlyphAtlas *glyph_atlas)
+StateInit(Arena *frame_arena, GlyphAtlas *glyph_atlas)
 {
-	state->arena = ArenaAlloc();
+	Arena *arena = ArenaAlloc();
+	state = PushStruct(arena, State);
+	state->arena = arena;
 	state->frame_arena = frame_arena;
 	state->glyph_atlas = glyph_atlas;
 	state->font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
 }
 
 function void
-MakeNextCurrent(State *state)
+MakeNextCurrent(void)
 {
 	state->make_next_current = 1;
 }
 
 function void
-MakeParentCurrent(State *state)
+MakeParentCurrent(void)
 {
 	state->current = state->current->parent;
 }
 
 function View *
-ViewAlloc(State *state)
+ViewAlloc(void)
 {
 	View *result = state->first_free_view;
 	if (result == 0)
@@ -293,7 +297,7 @@ ViewAlloc(State *state)
 }
 
 function void
-ViewRelease(State *state, View *view)
+ViewRelease(View *view)
 {
 	if (state->first_view_all == view)
 	{
@@ -320,7 +324,7 @@ ViewRelease(State *state, View *view)
 }
 
 function void
-ViewPush(State *state, View *view)
+ViewPush(View *view)
 {
 	view->next = 0;
 	view->first = 0;
@@ -348,7 +352,7 @@ ViewPush(State *state, View *view)
 }
 
 function View *
-ViewFromString(State *state, String8 string)
+ViewFromString(String8 string)
 {
 	View *result = 0;
 	U64 key = KeyFromString(string, state->current->key);
@@ -365,19 +369,19 @@ ViewFromString(State *state, String8 string)
 
 	if (result == 0)
 	{
-		result = ViewAlloc(state);
+		result = ViewAlloc();
 		result->key = key;
 		result->flags |= ViewFlags_FirstFrame;
 	}
 
-	ViewPush(state, result);
+	ViewPush(result);
 	result->last_touched_build_index = state->build_index;
 
 	return result;
 }
 
 function Signal
-SignalForView(State *state, View *view)
+SignalForView(View *view)
 {
 	Signal result = {0};
 	result.pressed = view->pressed;
@@ -460,24 +464,24 @@ SignalForView(State *state, View *view)
 }
 
 function Signal
-Label(State *state, String8 string)
+Label(String8 string)
 {
-	View *view = ViewFromString(state, string);
+	View *view = ViewFromString(string);
 	view->flags |= ViewFlags_DrawText;
 	view->string = string;
 	view->text_color = v3(1, 1, 1);
-	return SignalForView(state, view);
+	return SignalForView(view);
 }
 
 function Signal
-Button(State *state, String8 string)
+Button(String8 string)
 {
-	View *view = ViewFromString(state, string);
+	View *view = ViewFromString(string);
 	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawText;
 	view->string = string;
 	view->padding = v2(10, 2);
 
-	Signal signal = SignalForView(state, view);
+	Signal signal = SignalForView(view);
 
 	if (Pressed(signal))
 	{
@@ -494,18 +498,18 @@ Button(State *state, String8 string)
 }
 
 function Signal
-Checkbox(State *state, B32 *value, String8 string)
+Checkbox(B32 *value, String8 string)
 {
-	MakeNextCurrent(state);
-	View *view = ViewFromString(state, string);
+	MakeNextCurrent();
+	View *view = ViewFromString(string);
 
-	MakeNextCurrent(state);
-	View *box = ViewFromString(state, Str8Lit("box"));
-	View *mark = ViewFromString(state, Str8Lit("mark"));
-	MakeParentCurrent(state);
+	MakeNextCurrent();
+	View *box = ViewFromString(Str8Lit("box"));
+	View *mark = ViewFromString(Str8Lit("mark"));
+	MakeParentCurrent();
 
-	View *label = ViewFromString(state, Str8Lit("label"));
-	MakeParentCurrent(state);
+	View *label = ViewFromString(Str8Lit("label"));
+	MakeParentCurrent();
 
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
@@ -516,7 +520,7 @@ Checkbox(State *state, B32 *value, String8 string)
 	label->string = string;
 	label->text_color = v3(1, 1, 1);
 
-	Signal signal = SignalForView(state, view);
+	Signal signal = SignalForView(view);
 	if (Clicked(signal))
 	{
 		*value = !*value;
@@ -557,18 +561,18 @@ Checkbox(State *state, B32 *value, String8 string)
 }
 
 function Signal
-RadioButton(State *state, U32 *selection, U32 option, String8 string)
+RadioButton(U32 *selection, U32 option, String8 string)
 {
-	MakeNextCurrent(state);
-	View *view = ViewFromString(state, string);
+	MakeNextCurrent();
+	View *view = ViewFromString(string);
 
-	MakeNextCurrent(state);
-	View *box = ViewFromString(state, Str8Lit("box"));
-	View *mark = ViewFromString(state, Str8Lit("mark"));
-	MakeParentCurrent(state);
+	MakeNextCurrent();
+	View *box = ViewFromString(Str8Lit("box"));
+	View *mark = ViewFromString(Str8Lit("mark"));
+	MakeParentCurrent();
 
-	View *label = ViewFromString(state, Str8Lit("label"));
-	MakeParentCurrent(state);
+	View *label = ViewFromString(Str8Lit("label"));
+	MakeParentCurrent();
 
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
@@ -579,7 +583,7 @@ RadioButton(State *state, U32 *selection, U32 option, String8 string)
 	label->string = string;
 	label->text_color = v3(1, 1, 1);
 
-	Signal signal = SignalForView(state, view);
+	Signal signal = SignalForView(view);
 	if (Clicked(signal))
 	{
 		*selection = option;
@@ -620,19 +624,19 @@ RadioButton(State *state, U32 *selection, U32 option, String8 string)
 }
 
 function Signal
-SliderF32(State *state, F32 *value, F32 minimum, F32 maximum, String8 string)
+SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 {
-	MakeNextCurrent(state);
-	View *view = ViewFromString(state, string);
+	MakeNextCurrent();
+	View *view = ViewFromString(string);
 
-	MakeNextCurrent(state);
-	View *track = ViewFromString(state, Str8Lit("track"));
-	View *thumb = ViewFromString(state, Str8Lit("thumb"));
-	MakeParentCurrent(state);
+	MakeNextCurrent();
+	View *track = ViewFromString(Str8Lit("track"));
+	View *thumb = ViewFromString(Str8Lit("thumb"));
+	MakeParentCurrent();
 
-	View *label = ViewFromString(state, Str8Lit("label"));
+	View *label = ViewFromString(Str8Lit("label"));
 
-	MakeParentCurrent(state);
+	MakeParentCurrent();
 
 	V2 size = v2(200, 20);
 
@@ -647,7 +651,7 @@ SliderF32(State *state, F32 *value, F32 minimum, F32 maximum, String8 string)
 	label->flags |= ViewFlags_DrawText;
 	label->text_color = v3(1, 1, 1);
 
-	Signal signal = SignalForView(state, view);
+	Signal signal = SignalForView(view);
 
 	if (Pressed(signal))
 	{
@@ -670,14 +674,14 @@ SliderF32(State *state, F32 *value, F32 minimum, F32 maximum, String8 string)
 }
 
 function Signal
-Scrollable(State *state, String8 string)
+Scrollable(String8 string)
 {
-	View *view = ViewFromString(state, string);
+	View *view = ViewFromString(string);
 	view->flags |= ViewFlags_Clip | ViewFlags_DrawBackground;
 	view->color = v3(1, 0, 0);
 	view->size_minimum = v2(200, 200);
 
-	Signal signal = SignalForView(state, view);
+	Signal signal = SignalForView(view);
 	if (Scrolled(signal))
 	{
 		view->child_offset.x += signal.scroll_distance.x;
@@ -688,7 +692,7 @@ Scrollable(State *state, String8 string)
 }
 
 function void
-PruneUnusedViews(State *state)
+PruneUnusedViews(void)
 {
 	View *next = 0;
 
@@ -698,7 +702,7 @@ PruneUnusedViews(State *state)
 
 		if (view->last_touched_build_index < state->build_index)
 		{
-			ViewRelease(state, view);
+			ViewRelease(view);
 		}
 	}
 }
@@ -741,7 +745,7 @@ StepAnimation(F32 *x, F32 *dx, F32 x_target, B32 is_size)
 }
 
 function void
-LayoutView(State *state, View *view, V2 origin)
+LayoutView(View *view, V2 origin)
 {
 	MemoryZeroStruct(&view->rasterized_line);
 	if (view->flags & ViewFlags_DrawText)
@@ -763,7 +767,7 @@ LayoutView(State *state, View *view, V2 origin)
 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
-		LayoutView(state, child, current_position);
+		LayoutView(child, current_position);
 		content_size_max.x = Max(content_size_max.x, child->size_target.x);
 		content_size_max.y = Max(content_size_max.y, child->size_target.y);
 
@@ -822,16 +826,16 @@ LayoutView(State *state, View *view, V2 origin)
 }
 
 function void
-LayoutUI(State *state, V2 viewport_size)
+LayoutUI(V2 viewport_size)
 {
 	state->root->size_minimum = viewport_size;
-	LayoutView(state, state->root, v2(0, 0));
+	LayoutView(state->root, v2(0, 0));
 }
 
 function void
-StartBuild(State *state)
+StartBuild(void)
 {
-	state->root = ViewAlloc(state);
+	state->root = ViewAlloc();
 	state->root->flags |= ViewFlags_FirstFrame | ViewFlags_DrawBackground;
 	state->root->color = v3(0.25, 0.25, 0.25);
 	state->root->padding = v2(20, 20);
@@ -841,23 +845,23 @@ StartBuild(State *state)
 }
 
 function void
-EndBuild(State *state, V2 viewport_size)
+EndBuild(V2 viewport_size)
 {
-	PruneUnusedViews(state);
-	LayoutUI(state, viewport_size);
+	PruneUnusedViews();
+	LayoutUI(viewport_size);
 	state->first_event = 0;
 	state->last_event = 0;
 }
 
 function void
-BuildUI(State *state)
+BuildUI(void)
 {
-	if (Clicked(Button(state, Str8Lit("Button 1"))))
+	if (Clicked(Button(Str8Lit("Button 1"))))
 	{
 		printf("button 1!\n");
 	}
 
-	Signal button_2_signal = Button(state, Str8Lit("Toggle Button 3"));
+	Signal button_2_signal = Button(Str8Lit("Toggle Button 3"));
 	local_persist B32 show_button_3 = 0;
 
 	if (Clicked(button_2_signal))
@@ -868,7 +872,7 @@ BuildUI(State *state)
 
 	if (show_button_3)
 	{
-		if (Clicked(Button(state, Str8Lit("Button 3"))))
+		if (Clicked(Button(Str8Lit("Button 3"))))
 		{
 			printf("button 3!\n");
 		}
@@ -876,48 +880,48 @@ BuildUI(State *state)
 
 	if (Pressed(button_2_signal))
 	{
-		Label(state, Str8Lit("Button 2 is currently pressed."));
+		Label(Str8Lit("Button 2 is currently pressed."));
 	}
 
-	Button(state, Str8Lit("Another Button"));
+	Button(Str8Lit("Another Button"));
 
-	Checkbox(state, &show_button_3, Str8Lit("Button 3?"));
+	Checkbox(&show_button_3, Str8Lit("Button 3?"));
 
 	local_persist B32 checked = 0;
-	Checkbox(state, &checked, Str8Lit("Another Checkbox"));
-	Signal springs_signal = Checkbox(state, &use_springs, Str8Lit("Animate Using Springs"));
-	Checkbox(state, &use_animations, Str8Lit("Animate"));
+	Checkbox(&checked, Str8Lit("Another Checkbox"));
+	Signal springs_signal = Checkbox(&use_springs, Str8Lit("Animate Using Springs"));
+	Checkbox(&use_animations, Str8Lit("Animate"));
 	if (Clicked(springs_signal) && use_springs)
 	{
 		use_animations = 1;
 	}
 
 	local_persist F32 value = 15;
-	SliderF32(state, &value, 10, 20, Str8Lit("Slider"));
+	SliderF32(&value, 10, 20, Str8Lit("Slider"));
 
 	local_persist U32 selection = 0;
-	RadioButton(state, &selection, 0, Str8Lit("Foo"));
-	RadioButton(state, &selection, 1, Str8Lit("Bar"));
-	RadioButton(state, &selection, 2, Str8Lit("Baz"));
+	RadioButton(&selection, 0, Str8Lit("Foo"));
+	RadioButton(&selection, 1, Str8Lit("Bar"));
+	RadioButton(&selection, 2, Str8Lit("Baz"));
 
-	MakeNextCurrent(state);
-	Scrollable(state, Str8Lit("scrollable"));
-	Button(state, Str8Lit("some button 1"));
-	Button(state, Str8Lit("some button 2"));
-	Button(state, Str8Lit("some button 3"));
-	Button(state, Str8Lit("some button 4"));
-	Button(state, Str8Lit("some button 5"));
-	Button(state, Str8Lit("some button 6"));
-	Button(state, Str8Lit("some button 7"));
-	Button(state, Str8Lit("some button 8"));
-	Button(state, Str8Lit("some button 9"));
-	Button(state, Str8Lit("some button 10"));
-	Button(state, Str8Lit("some button 11"));
-	MakeParentCurrent(state);
+	MakeNextCurrent();
+	Scrollable(Str8Lit("scrollable"));
+	Button(Str8Lit("some button 1"));
+	Button(Str8Lit("some button 2"));
+	Button(Str8Lit("some button 3"));
+	Button(Str8Lit("some button 4"));
+	Button(Str8Lit("some button 5"));
+	Button(Str8Lit("some button 6"));
+	Button(Str8Lit("some button 7"));
+	Button(Str8Lit("some button 8"));
+	Button(Str8Lit("some button 9"));
+	Button(Str8Lit("some button 10"));
+	Button(Str8Lit("some button 11"));
+	MakeParentCurrent();
 }
 
 function void
-RenderView(State *state, View *view, V2 clip_origin, V2 clip_size, BoxArray *box_array)
+RenderView(View *view, V2 clip_origin, V2 clip_size, BoxArray *box_array)
 {
 	if (view->flags & ViewFlags_Clip)
 	{
@@ -1010,14 +1014,14 @@ RenderView(State *state, View *view, V2 clip_origin, V2 clip_size, BoxArray *box
 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
-		RenderView(state, child, clip_origin, clip_size, box_array);
+		RenderView(child, clip_origin, clip_size, box_array);
 	}
 }
 
 function void
-RenderUI(State *state, V2 viewport_size, BoxArray *box_array)
+RenderUI(V2 viewport_size, BoxArray *box_array)
 {
-	RenderView(state, state->root, v2(0, 0), viewport_size, box_array);
+	RenderView(state->root, v2(0, 0), viewport_size, box_array);
 }
 
 @implementation MainView
@@ -1033,7 +1037,6 @@ id<MTLRenderPipelineState> pipeline_state;
 CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
-State state;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -1094,7 +1097,7 @@ State state;
 		abort();
 	}
 
-	StateInit(&state, frame_arena, &glyph_atlas);
+	StateInit(frame_arena, &glyph_atlas);
 
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
@@ -1117,10 +1120,10 @@ State state;
 	viewport_size.x = (F32)self.bounds.size.width;
 	viewport_size.y = (F32)self.bounds.size.height;
 
-	StartBuild(&state);
-	BuildUI(&state);
-	EndBuild(&state, viewport_size);
-	RenderUI(&state, viewport_size, &box_array);
+	StartBuild();
+	BuildUI();
+	EndBuild(viewport_size);
+	RenderUI(viewport_size, &box_array);
 
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
@@ -1310,16 +1313,16 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 		event->scroll_distance.y = (F32)ns_event.scrollingDeltaY;
 	}
 
-	if (state.first_event == 0)
+	if (state->first_event == 0)
 	{
-		Assert(state.last_event == 0);
-		state.first_event = event;
+		Assert(state->last_event == 0);
+		state->first_event = event;
 	}
 	else
 	{
-		state.last_event->next = event;
+		state->last_event->next = event;
 	}
-	state.last_event = event;
+	state->last_event = event;
 }
 
 @end
