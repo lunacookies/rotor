@@ -921,7 +921,7 @@ BuildUI(void)
 }
 
 function void
-RenderView(View *view, V2 clip_origin, V2 clip_size, BoxArray *box_array)
+RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray *box_array)
 {
 	if (view->flags & ViewFlags_Clip)
 	{
@@ -974,7 +974,11 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, BoxArray *box_array)
 		chunk->count++;
 
 		bg_box->origin = view->origin;
+		bg_box->origin.x *= scale_factor;
+		bg_box->origin.y *= scale_factor;
 		bg_box->size = view->size;
+		bg_box->size.x *= scale_factor;
+		bg_box->size.y *= scale_factor;
 		bg_box->color = view->color;
 	}
 
@@ -1002,10 +1006,12 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, BoxArray *box_array)
 			Assert(box_array->count <= box_array->capacity);
 
 			box->origin = position;
+			box->origin.x *= scale_factor;
+			box->origin.y *= scale_factor;
 			box->texture_origin.x = slot->origin.x;
 			box->texture_origin.y = slot->origin.y;
-			box->size.x = slot->size.x;
-			box->size.y = slot->size.y;
+			box->size.x = slot->size.x * scale_factor;
+			box->size.y = slot->size.y * scale_factor;
 			box->texture_size.x = slot->size.x;
 			box->texture_size.y = slot->size.y;
 			box->color = view->text_color;
@@ -1014,14 +1020,14 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, BoxArray *box_array)
 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
-		RenderView(child, clip_origin, clip_size, box_array);
+		RenderView(child, clip_origin, clip_size, scale_factor, box_array);
 	}
 }
 
 function void
-RenderUI(V2 viewport_size, BoxArray *box_array)
+RenderUI(V2 viewport_size, F32 scale_factor, BoxArray *box_array)
 {
-	RenderView(state->root, v2(0, 0), viewport_size, box_array);
+	RenderView(state->root, v2(0, 0), viewport_size, scale_factor, box_array);
 }
 
 @implementation MainView
@@ -1120,10 +1126,12 @@ GlyphAtlas glyph_atlas;
 	viewport_size.x = (F32)self.bounds.size.width;
 	viewport_size.y = (F32)self.bounds.size.height;
 
+	F32 scale_factor = (F32)self.window.backingScaleFactor;
+
 	StartBuild();
 	BuildUI();
 	EndBuild(viewport_size);
-	RenderUI(viewport_size, &box_array);
+	RenderUI(viewport_size, scale_factor, &box_array);
 
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
@@ -1144,7 +1152,12 @@ GlyphAtlas glyph_atlas;
 	V2 texture_bounds = v2(1024, 1024);
 	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:1];
 
-	[encoder setVertexBytes:&viewport_size length:sizeof(viewport_size) atIndex:2];
+	V2 viewport_size_pixels = viewport_size;
+	viewport_size_pixels.x *= scale_factor;
+	viewport_size_pixels.y *= scale_factor;
+	[encoder setVertexBytes:&viewport_size_pixels
+	                 length:sizeof(viewport_size_pixels)
+	                atIndex:2];
 
 	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 
@@ -1168,8 +1181,6 @@ GlyphAtlas glyph_atlas;
 		V2 scissor_rect_size = {0};
 		scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
 		scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
-
-		F32 scale_factor = (F32)self.window.backingScaleFactor;
 
 		MTLScissorRect scissor_rect = {0};
 		scissor_rect.x = (U64)(scissor_rect_origin.x * scale_factor);
