@@ -31,6 +31,7 @@ clang -o Products/Rotor.app/Contents/MacOS/Rotor \
 
 xcrun metal \
 	-o Products/Rotor.app/Contents/Resources/Shaders.metallib \
+	-gline-tables-only -frecord-sources \
 	Source/Rotor/Shaders.metal
 
 cp Source/Rotor/Rotor.entitlements Products/Rotor.entitlements
