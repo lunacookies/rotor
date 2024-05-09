@@ -10,6 +10,8 @@ struct Box
 	V2 size;
 	V2 texture_origin;
 	V2 texture_size;
+	F32 corner_radius;
+	F32 blur;
 };
 
 typedef struct BoxRenderChunk BoxRenderChunk;
@@ -242,7 +244,7 @@ RasterizeLine(
 	CFRelease(string);
 }
 
-State *state;
+global State *state;
 
 function void
 StateInit(Arena *frame_arena, GlyphAtlas *glyph_atlas)
@@ -729,19 +731,19 @@ StepAnimation(F32 *x, F32 *dx, F32 x_target, B32 is_size)
 	F32 friction = 5;
 	F32 mass = 20;
 
-	if (is_size && x_target <= 0 && *x <= 0)
-	{
-		*x = 0;
-		*dx = 0;
-		return;
-	}
-
 	F32 displacement = *x - x_target;
 	F32 tension_force = -tension * displacement;
 	F32 friction_force = -friction * *dx;
 	F32 ddx = (tension_force + friction_force) * (1.f / mass);
 	*dx += ddx;
 	*x += *dx;
+
+	if (is_size && *x < 0)
+	{
+		*dx = 0;
+		*x = 0;
+		return;
+	}
 }
 
 function void
@@ -853,6 +855,9 @@ EndBuild(V2 viewport_size)
 	state->last_event = 0;
 }
 
+global F32 corner_radius = 0;
+global F32 blur = 0;
+
 function void
 BuildUI(void)
 {
@@ -898,6 +903,8 @@ BuildUI(void)
 
 	local_persist F32 value = 15;
 	SliderF32(&value, 10, 20, Str8Lit("Slider"));
+	SliderF32(&blur, 0, 50, Str8Lit("Blur"));
+	SliderF32(&corner_radius, 0, 20, Str8Lit("Corner Radius"));
 
 	local_persist U32 selection = 0;
 	RadioButton(&selection, 0, Str8Lit("Foo"));
@@ -980,6 +987,8 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		bg_box->size.x *= scale_factor;
 		bg_box->size.y *= scale_factor;
 		bg_box->color = view->color;
+		bg_box->corner_radius = corner_radius;
+		bg_box->blur = blur;
 	}
 
 	if (view->flags & ViewFlags_DrawText)
@@ -1036,7 +1045,6 @@ Arena *permanent_arena;
 Arena *frame_arena;
 
 CAMetalLayer *metal_layer;
-id<MTLTexture> multisample_texture;
 id<MTLCommandQueue> command_queue;
 id<MTLRenderPipelineState> pipeline_state;
 
@@ -1081,7 +1089,6 @@ GlyphAtlas glyph_atlas;
 	}
 
 	MTLRenderPipelineDescriptor *descriptor = [[MTLRenderPipelineDescriptor alloc] init];
-	descriptor.rasterSampleCount = 4;
 	descriptor.colorAttachments[0].pixelFormat = metal_layer.pixelFormat;
 	descriptor.colorAttachments[0].blendingEnabled = YES;
 	descriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
@@ -1138,10 +1145,9 @@ GlyphAtlas glyph_atlas;
 	id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
 
 	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-	descriptor.colorAttachments[0].texture = multisample_texture;
-	descriptor.colorAttachments[0].resolveTexture = drawable.texture;
+	descriptor.colorAttachments[0].texture = drawable.texture;
 	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-	descriptor.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(1, 1, 0, 1);
 
 	id<MTLRenderCommandEncoder> encoder =
@@ -1213,7 +1219,6 @@ GlyphAtlas glyph_atlas;
 	GlyphAtlasInit(&glyph_atlas, permanent_arena, metal_layer.device, scale_factor);
 
 	metal_layer.contentsScale = self.window.backingScaleFactor;
-	[self updateMultisampleTexture];
 }
 
 - (void)setFrameSize:(NSSize)size
@@ -1229,21 +1234,6 @@ GlyphAtlas glyph_atlas;
 	}
 
 	metal_layer.drawableSize = size;
-	[self updateMultisampleTexture];
-}
-
-- (void)updateMultisampleTexture
-{
-	F32 scale_factor = (F32)self.window.backingScaleFactor;
-	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
-	descriptor.textureType = MTLTextureType2DMultisample;
-	descriptor.usage = MTLTextureUsageRenderTarget;
-	descriptor.storageMode = MTLStorageModeMemoryless;
-	descriptor.width = (U64)(self.bounds.size.width * scale_factor);
-	descriptor.height = (U64)(self.bounds.size.height * scale_factor);
-	descriptor.pixelFormat = metal_layer.pixelFormat;
-	descriptor.sampleCount = 4;
-	multisample_texture = [metal_layer.device newTextureWithDescriptor:descriptor];
 }
 
 function CVReturn
