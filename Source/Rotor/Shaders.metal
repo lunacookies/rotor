@@ -22,6 +22,8 @@ typedef float2 V2;
 typedef float3 V3;
 typedef float4 V4;
 
+#define global static
+
 struct Box
 {
 	V3 color;
@@ -33,7 +35,7 @@ struct Box
 
 struct RasterizerData
 {
-	V4 position [[position]];
+	V4 rasterizer_position_ndc [[position]];
 	V3 color;
 	V2 texture_coordinates;
 	B32 untextured;
@@ -52,31 +54,32 @@ SRGBLinearFromGamma(F32 x)
 	}
 }
 
+constant global V2 quad_positions_ndc[] = {
+        {-1, 1},
+        {-1, -1},
+        {1, 1},
+        {1, 1},
+        {1, -1},
+        {-1, -1},
+};
+
 vertex RasterizerData
 VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant Box *boxes,
         constant V2 *texture_bounds, constant V2 *bounds)
 {
-	V2 positions[] = {
-	        {-1, 1},
-	        {-1, -1},
-	        {1, 1},
-	        {1, 1},
-	        {1, -1},
-	        {-1, -1},
-	};
-
-	V2 position = positions[vertex_id];
-	Box box = boxes[instance_id];
-
-	V2 origin_ndc = (box.origin + box.size / 2) / *bounds * 2 - 1;
-	origin_ndc.y *= -1;
-	V2 scale = box.size / *bounds;
-
 	RasterizerData result = {0};
-	result.position = V4(position * scale + origin_ndc, 0, 1);
 
-	result.texture_coordinates = (position + 1) / 2;
-	result.texture_coordinates.y = 1 - result.texture_coordinates.y;
+	V2 offset = quad_positions_ndc[vertex_id];
+	Box box = boxes[instance_id];
+	V2 box_origin_rounded = metal::floor(box.origin);
+	V2 box_size_rounded = metal::ceil(box.size);
+
+	V2 position = box_origin_rounded + box_size_rounded * ((offset + 1) * 0.5);
+	V2 position_ndc = (position / *bounds * 2 - 1) * V2(1, -1);
+
+	result.rasterizer_position_ndc = V4(position_ndc, 0, 1);
+
+	result.texture_coordinates = (offset + 1) / 2;
 	result.texture_coordinates =
 	        result.texture_coordinates * (box.texture_size / *texture_bounds) +
 	        (box.texture_origin / *texture_bounds);
