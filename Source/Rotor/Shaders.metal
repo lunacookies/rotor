@@ -31,6 +31,7 @@ struct Box
 	V2 size;
 	V2 texture_origin;
 	V2 texture_size;
+	F32 border_thickness;
 	F32 corner_radius;
 	F32 blur;
 };
@@ -44,6 +45,7 @@ struct RasterizerData
 	V4 color;
 	V2 texture_coordinates;
 	B32 untextured;
+	F32 border_thickness;
 	F32 corner_radius;
 	F32 blur;
 };
@@ -127,6 +129,7 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.color *= box.color.a;
 
 	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
+	result.border_thickness = box.border_thickness;
 	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
 	result.blur = box.blur;
 
@@ -157,6 +160,15 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 	F32 distance = Rectangle(data.position, data.center, data.half_size, data.corner_radius);
 	F32 factor = 1 - metal::saturate(distance / (data.blur + 1));
 	V4 result = data.color * factor;
+
+	if (data.border_thickness != 0)
+	{
+		distance = Rectangle(data.position, data.center,
+		        data.half_size - data.border_thickness,
+		        data.corner_radius - data.border_thickness);
+		factor = metal::saturate(distance / (data.blur + 1));
+		result *= factor;
+	}
 
 	if (!data.untextured)
 	{

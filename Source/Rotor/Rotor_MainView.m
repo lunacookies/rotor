@@ -10,6 +10,7 @@ struct Box
 	V2 size;
 	V2 texture_origin;
 	V2 texture_size;
+	F32 border_thickness;
 	F32 corner_radius;
 	F32 blur;
 };
@@ -128,6 +129,8 @@ struct View
 	V2 child_offset;
 	V3 color;
 	V3 text_color;
+	V4 border_color;
+	F32 border_thickness;
 	F32 corner_radius;
 	V4 shadow_color;
 	F32 shadow_blur;
@@ -487,6 +490,8 @@ Button(String8 string)
 	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow | ViewFlags_DrawText;
 	view->string = string;
 	view->padding = v2(10, 2);
+	view->border_thickness = 1;
+	view->border_color = v4(1, 1, 1, 0.1f);
 	view->corner_radius = 2;
 	view->shadow_color = v4(0, 0, 0, 1);
 	view->shadow_blur = 2;
@@ -525,6 +530,7 @@ Checkbox(B32 *value, String8 string)
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
 	box->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
+	box->border_thickness = 1;
 	box->corner_radius = 2;
 	box->shadow_color = v4(1, 1, 1, 0.1f);
 	box->shadow_blur = 1;
@@ -559,6 +565,7 @@ Checkbox(B32 *value, String8 string)
 			box->padding = v2(5, 5);
 			mark->padding = v2(5, 5);
 		}
+		box->border_color = v4(0, 0, 0, 0.5f);
 	}
 	else
 	{
@@ -574,6 +581,7 @@ Checkbox(B32 *value, String8 string)
 			box->padding = v2(10, 10);
 			mark->padding = v2(0, 0);
 		}
+		box->border_color = v4(0, 0, 0, 1);
 	}
 
 	return signal;
@@ -596,6 +604,7 @@ RadioButton(U32 *selection, U32 option, String8 string)
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
 	box->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
+	box->border_thickness = 1;
 	box->corner_radius = 10;
 	box->shadow_color = v4(1, 1, 1, 0.1f);
 	box->shadow_blur = 1;
@@ -630,6 +639,7 @@ RadioButton(U32 *selection, U32 option, String8 string)
 			box->padding = v2(5, 5);
 			mark->padding = v2(5, 5);
 		}
+		box->border_color = v4(0, 0, 0, 0.5f);
 	}
 	else
 	{
@@ -645,6 +655,7 @@ RadioButton(U32 *selection, U32 option, String8 string)
 			box->padding = v2(10, 10);
 			mark->padding = v2(0, 0);
 		}
+		box->border_color = v4(0, 0, 0, 1);
 	}
 
 	return signal;
@@ -1084,6 +1095,24 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
 		RenderView(child, clip_origin, clip_size, scale_factor, box_array);
+	}
+
+	if (view->border_thickness > 0)
+	{
+		Box *box = box_array->boxes + box_array->count;
+		box_array->count++;
+		chunk->count++;
+		Assert(box_array->count <= box_array->capacity);
+
+		box->origin = view->origin;
+		box->origin.x *= scale_factor;
+		box->origin.y *= scale_factor;
+		box->size = view->size;
+		box->size.x *= scale_factor;
+		box->size.y *= scale_factor;
+		box->color = view->border_color;
+		box->border_thickness = view->border_thickness * scale_factor;
+		box->corner_radius = view->corner_radius * scale_factor;
 	}
 }
 
