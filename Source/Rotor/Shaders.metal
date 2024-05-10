@@ -26,7 +26,7 @@ typedef float4 V4;
 
 struct Box
 {
-	V3 color;
+	V4 color;
 	V2 origin;
 	V2 size;
 	V2 texture_origin;
@@ -41,7 +41,7 @@ struct RasterizerData
 	V2 position;
 	V2 center;
 	V2 half_size;
-	V3 color;
+	V4 color;
 	V2 texture_coordinates;
 	B32 untextured;
 	F32 corner_radius;
@@ -123,6 +123,8 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.color.r = SRGBLinearFromGamma(box.color.r);
 	result.color.g = SRGBLinearFromGamma(box.color.g);
 	result.color.b = SRGBLinearFromGamma(box.color.b);
+	result.color.a = 1;
+	result.color *= box.color.a;
 
 	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
 	result.corner_radius = box.corner_radius;
@@ -154,7 +156,7 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 {
 	F32 distance = Rectangle(data.position, data.center, data.half_size, data.corner_radius);
 	F32 factor = 1 - metal::saturate(distance / (data.blur + 1));
-	V4 result = V4(data.color, 1) * factor;
+	V4 result = data.color * factor;
 
 	if (!data.untextured)
 	{

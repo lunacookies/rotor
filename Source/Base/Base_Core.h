@@ -55,9 +55,29 @@ union __attribute((aligned(16))) V3
 	};
 };
 
+typedef union V4 V4;
+union __attribute((aligned(16))) V4
+{
+	struct
+	{
+		F32 x;
+		F32 y;
+		F32 z;
+		F32 w;
+	};
+	struct
+	{
+		F32 r;
+		F32 g;
+		F32 b;
+		F32 a;
+	};
+};
+
 #define v2(v0, v1) ((V2){.x = (v0), .y = (v1)})
 #define v2u64(v0, v1) ((V2U64){.x = (v0), .y = (v1)})
 #define v3(v0, v1, v2) ((V3){.x = (v0), .y = (v1), .z = (v2)})
+#define v4(v0, v1, v2, v3) ((V4){.x = (v0), .y = (v1), .z = (v2), .w = (v3)})
 
 typedef enum Axis2
 {
