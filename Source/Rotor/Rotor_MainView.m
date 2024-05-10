@@ -13,6 +13,8 @@ struct Box
 	F32 border_thickness;
 	F32 corner_radius;
 	F32 blur;
+	V2 cutout_origin;
+	V2 cutout_size;
 };
 
 typedef struct BoxRenderChunk BoxRenderChunk;
@@ -1069,6 +1071,12 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 			box->color = child->shadow_color;
 			box->corner_radius = child->corner_radius * scale_factor;
 			box->blur = child->shadow_blur * scale_factor;
+			box->cutout_origin = child->origin;
+			box->cutout_origin.x *= scale_factor;
+			box->cutout_origin.y *= scale_factor;
+			box->cutout_size = child->size;
+			box->cutout_size.x *= scale_factor;
+			box->cutout_size.y *= scale_factor;
 		}
 	}
 

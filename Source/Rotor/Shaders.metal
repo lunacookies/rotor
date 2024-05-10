@@ -34,6 +34,8 @@ struct Box
 	F32 border_thickness;
 	F32 corner_radius;
 	F32 blur;
+	V2 cutout_origin;
+	V2 cutout_size;
 };
 
 struct RasterizerData
@@ -42,6 +44,8 @@ struct RasterizerData
 	V2 position;
 	V2 center;
 	V2 half_size;
+	V2 cutout_center;
+	V2 cutout_half_size;
 	V4 color;
 	V2 texture_coordinates;
 	B32 untextured;
@@ -108,6 +112,8 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	F32 shortest_side = metal::min(box.size.x, box.size.y);
 	box.blur = metal::min(box.blur, shortest_side);
 
+	result.center = box.origin + box.size * 0.5;
+
 	// By default the entirety of the blur sits outside of the box,
 	// but we want half to sit within the box and the other half outside the box.
 	// Thus, we need to move each edge of the box inwards by 0.5 * blur.
@@ -115,7 +121,8 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.half_size = 0.5 * (box.size - box.blur);
 	result.half_size = metal::max(result.half_size, 0);
 
-	result.center = box.origin + box.size * 0.5;
+	result.cutout_center = box.cutout_origin + box.cutout_size * 0.5;
+	result.cutout_half_size = 0.5 * box.cutout_size;
 
 	// Multiply by 0.5 to account for glyph atlas using points rather than pixels.
 	result.texture_coordinates =
@@ -160,6 +167,14 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 	F32 distance = Rectangle(data.position, data.center, data.half_size, data.corner_radius);
 	F32 factor = 1 - metal::saturate(distance / (data.blur + 1));
 	V4 result = data.color * factor;
+
+	if (data.cutout_half_size.x > 0 || data.cutout_half_size.y > 0)
+	{
+		distance = Rectangle(data.position, data.cutout_center, data.cutout_half_size,
+		        data.corner_radius);
+		factor = metal::saturate(distance);
+		result *= factor;
+	}
 
 	if (data.border_thickness != 0)
 	{
