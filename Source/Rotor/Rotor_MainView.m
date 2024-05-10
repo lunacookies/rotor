@@ -127,8 +127,8 @@ struct View
 	F32 child_gap;
 	Axis2 child_layout_axis;
 	V2 child_offset;
-	V3 color;
-	V3 text_color;
+	V4 color;
+	V4 text_color;
 	V4 border_color;
 	F32 border_thickness;
 	F32 corner_radius;
@@ -479,7 +479,7 @@ Label(String8 string)
 	View *view = ViewFromString(string);
 	view->flags |= ViewFlags_DrawText;
 	view->string = string;
-	view->text_color = v3(1, 1, 1);
+	view->text_color = v4(1, 1, 1, 1);
 	return SignalForView(view);
 }
 
@@ -501,13 +501,13 @@ Button(String8 string)
 
 	if (Pressed(signal))
 	{
-		view->color = v3(0.7f, 0.7f, 0.7f);
-		view->text_color = v3(0, 0, 0);
+		view->color = v4(0.7f, 0.7f, 0.7f, 1);
+		view->text_color = v4(0, 0, 0, 1);
 	}
 	else
 	{
-		view->color = v3(0.1f, 0.1f, 0.1f);
-		view->text_color = v3(1, 1, 1);
+		view->color = v4(0.1f, 0.1f, 0.1f, 1);
+		view->text_color = v4(1, 1, 1, 1);
 	}
 
 	return signal;
@@ -537,13 +537,13 @@ Checkbox(B32 *value, String8 string)
 	box->shadow_offset.y = 1;
 	mark->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	mark->corner_radius = 2;
-	mark->color = v3(1, 1, 1);
+	mark->color = v4(1, 1, 1, 1);
 	mark->shadow_color = v4(0, 0, 0, 0.5);
 	mark->shadow_blur = 4;
 	mark->shadow_offset.y = 2;
 	label->flags |= ViewFlags_DrawText;
 	label->string = string;
-	label->text_color = v3(1, 1, 1);
+	label->text_color = v4(1, 1, 1, 1);
 
 	Signal signal = SignalForView(view);
 	if (Clicked(signal))
@@ -555,13 +555,13 @@ Checkbox(B32 *value, String8 string)
 	{
 		if (Pressed(signal))
 		{
-			box->color = v3(0.2f, 0.7f, 1);
+			box->color = v4(0.2f, 0.7f, 1, 1);
 			box->padding = v2(6, 6);
 			mark->padding = v2(4, 4);
 		}
 		else
 		{
-			box->color = v3(0, 0.5f, 1);
+			box->color = v4(0, 0.5f, 1, 1);
 			box->padding = v2(5, 5);
 			mark->padding = v2(5, 5);
 		}
@@ -571,13 +571,13 @@ Checkbox(B32 *value, String8 string)
 	{
 		if (Pressed(signal))
 		{
-			box->color = v3(0.4f, 0.4f, 0.4f);
+			box->color = v4(0.4f, 0.4f, 0.4f, 1);
 			box->padding = v2(8, 8);
 			mark->padding = v2(2, 2);
 		}
 		else
 		{
-			box->color = v3(0.1f, 0.1f, 0.1f);
+			box->color = v4(0.1f, 0.1f, 0.1f, 1);
 			box->padding = v2(10, 10);
 			mark->padding = v2(0, 0);
 		}
@@ -610,14 +610,14 @@ RadioButton(U32 *selection, U32 option, String8 string)
 	box->shadow_blur = 1;
 	box->shadow_offset.y = 1;
 	mark->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
-	mark->color = v3(1, 1, 1);
+	mark->color = v4(1, 1, 1, 1);
 	mark->corner_radius = 10;
 	mark->shadow_color = v4(0, 0, 0, 0.5);
 	mark->shadow_blur = 4;
 	mark->shadow_offset.y = 2;
 	label->flags |= ViewFlags_DrawText;
 	label->string = string;
-	label->text_color = v3(1, 1, 1);
+	label->text_color = v4(1, 1, 1, 1);
 
 	Signal signal = SignalForView(view);
 	if (Clicked(signal))
@@ -629,13 +629,13 @@ RadioButton(U32 *selection, U32 option, String8 string)
 	{
 		if (Pressed(signal))
 		{
-			box->color = v3(0.2f, 0.7f, 1);
+			box->color = v4(0.2f, 0.7f, 1, 1);
 			box->padding = v2(6, 6);
 			mark->padding = v2(4, 4);
 		}
 		else
 		{
-			box->color = v3(0, 0.5f, 1);
+			box->color = v4(0, 0.5f, 1, 1);
 			box->padding = v2(5, 5);
 			mark->padding = v2(5, 5);
 		}
@@ -645,13 +645,13 @@ RadioButton(U32 *selection, U32 option, String8 string)
 	{
 		if (Pressed(signal))
 		{
-			box->color = v3(0.4f, 0.4f, 0.4f);
+			box->color = v4(0.4f, 0.4f, 0.4f, 1);
 			box->padding = v2(8, 8);
 			mark->padding = v2(2, 2);
 		}
 		else
 		{
-			box->color = v3(0.1f, 0.1f, 0.1f);
+			box->color = v4(0.1f, 0.1f, 0.1f, 1);
 			box->padding = v2(10, 10);
 			mark->padding = v2(0, 0);
 		}
@@ -682,7 +682,7 @@ SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 	view->child_gap = 10;
 	track->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	track->size_minimum = size;
-	track->color = v3(0, 0, 0);
+	track->color = v4(0, 0, 0, 1);
 	track->corner_radius = size.y;
 	track->shadow_color = v4(1, 1, 1, 0.1f);
 	track->shadow_blur = 1;
@@ -692,17 +692,17 @@ SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 	thumb->size_minimum.x *= (*value - minimum) / (maximum - minimum);
 	thumb->corner_radius = size.y;
 	label->flags |= ViewFlags_DrawText;
-	label->text_color = v3(1, 1, 1);
+	label->text_color = v4(1, 1, 1, 1);
 
 	Signal signal = SignalForView(view);
 
 	if (Pressed(signal))
 	{
-		thumb->color = v3(1, 1, 1);
+		thumb->color = v4(1, 1, 1, 1);
 	}
 	else
 	{
-		thumb->color = v3(0.7f, 0.7f, 0.7f);
+		thumb->color = v4(0.7f, 0.7f, 0.7f, 1);
 	}
 
 	if (Dragged(signal))
@@ -721,7 +721,7 @@ Scrollable(String8 string)
 {
 	View *view = ViewFromString(string);
 	view->flags |= ViewFlags_Clip | ViewFlags_DrawBackground;
-	view->color = v3(1, 0, 0);
+	view->color = v4(1, 0, 0, 1);
 	view->size_minimum = v2(200, 200);
 
 	Signal signal = SignalForView(view);
@@ -880,7 +880,7 @@ StartBuild(void)
 {
 	state->root = ViewAlloc();
 	state->root->flags |= ViewFlags_FirstFrame | ViewFlags_DrawBackground;
-	state->root->color = v3(0.25, 0.25, 0.25);
+	state->root->color = v4(0.25, 0.25, 0.25, 1);
 	state->root->padding = v2(20, 20);
 	state->root->child_gap = 10;
 	state->current = state->root;
@@ -1023,10 +1023,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		box->size = view->size;
 		box->size.x *= scale_factor;
 		box->size.y *= scale_factor;
-		box->color.r = view->color.r;
-		box->color.g = view->color.g;
-		box->color.b = view->color.b;
-		box->color.a = 1;
+		box->color = view->color;
 		box->corner_radius = view->corner_radius * scale_factor;
 	}
 
@@ -1062,10 +1059,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 			box->size.y = slot->size.y * scale_factor;
 			box->texture_size.x = slot->size.x;
 			box->texture_size.y = slot->size.y;
-			box->color.r = view->text_color.r;
-			box->color.g = view->text_color.g;
-			box->color.b = view->text_color.b;
-			box->color.a = 1;
+			box->color = view->text_color;
 		}
 	}
 
