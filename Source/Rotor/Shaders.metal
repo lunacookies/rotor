@@ -127,7 +127,7 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.color *= box.color.a;
 
 	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
-	result.corner_radius = box.corner_radius;
+	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
 	result.blur = box.blur;
 
 	return result;

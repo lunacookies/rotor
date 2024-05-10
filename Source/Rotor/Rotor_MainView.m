@@ -128,6 +128,7 @@ struct View
 	V2 child_offset;
 	V3 color;
 	V3 text_color;
+	F32 corner_radius;
 	V4 shadow_color;
 	F32 shadow_blur;
 	V2 shadow_offset;
@@ -486,6 +487,7 @@ Button(String8 string)
 	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow | ViewFlags_DrawText;
 	view->string = string;
 	view->padding = v2(10, 2);
+	view->corner_radius = 2;
 	view->shadow_color = v4(0, 0, 0, 1);
 	view->shadow_blur = 2;
 	view->shadow_offset.y = 1;
@@ -523,10 +525,12 @@ Checkbox(B32 *value, String8 string)
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
 	box->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
+	box->corner_radius = 2;
 	box->shadow_color = v4(1, 1, 1, 0.1f);
 	box->shadow_blur = 1;
 	box->shadow_offset.y = 1;
 	mark->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
+	mark->corner_radius = 2;
 	mark->color = v3(1, 1, 1);
 	mark->shadow_color = v4(0, 0, 0, 0.5);
 	mark->shadow_blur = 4;
@@ -592,11 +596,13 @@ RadioButton(U32 *selection, U32 option, String8 string)
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
 	box->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
+	box->corner_radius = 10;
 	box->shadow_color = v4(1, 1, 1, 0.1f);
 	box->shadow_blur = 1;
 	box->shadow_offset.y = 1;
 	mark->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	mark->color = v3(1, 1, 1);
+	mark->corner_radius = 10;
 	mark->shadow_color = v4(0, 0, 0, 0.5);
 	mark->shadow_blur = 4;
 	mark->shadow_offset.y = 2;
@@ -666,12 +672,14 @@ SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 	track->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	track->size_minimum = size;
 	track->color = v3(0, 0, 0);
+	track->corner_radius = size.y;
 	track->shadow_color = v4(1, 1, 1, 0.1f);
 	track->shadow_blur = 1;
 	track->shadow_offset.y = 1;
 	thumb->flags |= ViewFlags_DrawBackground;
 	thumb->size_minimum = size;
 	thumb->size_minimum.x *= (*value - minimum) / (maximum - minimum);
+	thumb->corner_radius = size.y;
 	label->flags |= ViewFlags_DrawText;
 	label->text_color = v3(1, 1, 1);
 
@@ -877,8 +885,6 @@ EndBuild(V2 viewport_size)
 	state->last_event = 0;
 }
 
-global F32 corner_radius = 0;
-
 function void
 BuildUI(void)
 {
@@ -924,7 +930,6 @@ BuildUI(void)
 
 	local_persist F32 value = 15;
 	SliderF32(&value, 10, 20, Str8Lit("Slider"));
-	SliderF32(&corner_radius, 0, 20, Str8Lit("Corner Radius"));
 
 	local_persist U32 selection = 0;
 	RadioButton(&selection, 0, Str8Lit("Foo"));
@@ -1011,7 +1016,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		box->color.g = view->color.g;
 		box->color.b = view->color.b;
 		box->color.a = 1;
-		box->corner_radius = corner_radius * scale_factor;
+		box->corner_radius = view->corner_radius * scale_factor;
 	}
 
 	if (view->flags & ViewFlags_DrawText)
@@ -1071,7 +1076,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 			box->size.x *= scale_factor;
 			box->size.y *= scale_factor;
 			box->color = child->shadow_color;
-			box->corner_radius = corner_radius * scale_factor;
+			box->corner_radius = child->corner_radius * scale_factor;
 			box->blur = child->shadow_blur * scale_factor;
 		}
 	}
