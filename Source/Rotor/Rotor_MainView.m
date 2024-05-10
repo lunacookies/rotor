@@ -49,10 +49,7 @@ typedef U32 ViewFlags;
 enum : ViewFlags
 {
 	ViewFlags_FirstFrame = (1 << 0),
-	ViewFlags_DrawBackground = (1 << 1),
-	ViewFlags_DrawShadow = (1 << 2),
-	ViewFlags_DrawText = (1 << 3),
-	ViewFlags_Clip = (1 << 4),
+	ViewFlags_Clip = (1 << 1),
 };
 
 typedef struct Signal Signal;
@@ -477,7 +474,6 @@ function Signal
 Label(String8 string)
 {
 	View *view = ViewFromString(string);
-	view->flags |= ViewFlags_DrawText;
 	view->string = string;
 	view->text_color = v4(1, 1, 1, 1);
 	return SignalForView(view);
@@ -487,7 +483,6 @@ function Signal
 Button(String8 string)
 {
 	View *view = ViewFromString(string);
-	view->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow | ViewFlags_DrawText;
 	view->string = string;
 	view->padding = v2(10, 2);
 	view->border_thickness = 1;
@@ -529,19 +524,16 @@ Checkbox(B32 *value, String8 string)
 
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
-	box->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	box->border_thickness = 1;
 	box->corner_radius = 2;
 	box->shadow_color = v4(1, 1, 1, 0.1f);
 	box->shadow_blur = 1;
 	box->shadow_offset.y = 1;
-	mark->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	mark->corner_radius = 2;
 	mark->color = v4(1, 1, 1, 1);
 	mark->shadow_color = v4(0, 0, 0, 0.5);
 	mark->shadow_blur = 4;
 	mark->shadow_offset.y = 2;
-	label->flags |= ViewFlags_DrawText;
 	label->string = string;
 	label->text_color = v4(1, 1, 1, 1);
 
@@ -603,19 +595,16 @@ RadioButton(U32 *selection, U32 option, String8 string)
 
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 5;
-	box->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	box->border_thickness = 1;
 	box->corner_radius = 10;
 	box->shadow_color = v4(1, 1, 1, 0.1f);
 	box->shadow_blur = 1;
 	box->shadow_offset.y = 1;
-	mark->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	mark->color = v4(1, 1, 1, 1);
 	mark->corner_radius = 10;
 	mark->shadow_color = v4(0, 0, 0, 0.5);
 	mark->shadow_blur = 4;
 	mark->shadow_offset.y = 2;
-	label->flags |= ViewFlags_DrawText;
 	label->string = string;
 	label->text_color = v4(1, 1, 1, 1);
 
@@ -680,18 +669,15 @@ SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 
 	view->child_layout_axis = Axis2_X;
 	view->child_gap = 10;
-	track->flags |= ViewFlags_DrawBackground | ViewFlags_DrawShadow;
 	track->size_minimum = size;
 	track->color = v4(0, 0, 0, 1);
 	track->corner_radius = size.y;
 	track->shadow_color = v4(1, 1, 1, 0.1f);
 	track->shadow_blur = 1;
 	track->shadow_offset.y = 1;
-	thumb->flags |= ViewFlags_DrawBackground;
 	thumb->size_minimum = size;
 	thumb->size_minimum.x *= (*value - minimum) / (maximum - minimum);
 	thumb->corner_radius = size.y;
-	label->flags |= ViewFlags_DrawText;
 	label->text_color = v4(1, 1, 1, 1);
 
 	Signal signal = SignalForView(view);
@@ -720,7 +706,7 @@ function Signal
 Scrollable(String8 string)
 {
 	View *view = ViewFromString(string);
-	view->flags |= ViewFlags_Clip | ViewFlags_DrawBackground;
+	view->flags |= ViewFlags_Clip;
 	view->color = v4(1, 0, 0, 1);
 	view->size_minimum = v2(200, 200);
 
@@ -791,7 +777,7 @@ function void
 LayoutView(View *view, V2 origin)
 {
 	MemoryZeroStruct(&view->rasterized_line);
-	if (view->flags & ViewFlags_DrawText)
+	if (view->text_color.a > 0)
 	{
 		RasterizeLine(state->frame_arena, &view->rasterized_line, view->string,
 		        state->glyph_atlas, state->font);
@@ -879,7 +865,7 @@ function void
 StartBuild(void)
 {
 	state->root = ViewAlloc();
-	state->root->flags |= ViewFlags_FirstFrame | ViewFlags_DrawBackground;
+	state->root->flags |= ViewFlags_FirstFrame;
 	state->root->color = v4(0.25, 0.25, 0.25, 1);
 	state->root->padding = v2(20, 20);
 	state->root->child_gap = 10;
@@ -1010,7 +996,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 	chunk->clip_origin = clip_origin;
 	chunk->clip_size = clip_size;
 
-	if (view->flags & ViewFlags_DrawBackground)
+	if (view->color.a > 0)
 	{
 		Box *box = box_array->boxes + box_array->count;
 		box_array->count++;
@@ -1027,7 +1013,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		box->corner_radius = view->corner_radius * scale_factor;
 	}
 
-	if (view->flags & ViewFlags_DrawText)
+	if (view->text_color.a > 0)
 	{
 		V2 text_origin = view->origin;
 		text_origin.x += view->padding.x;
@@ -1065,7 +1051,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
-		if (child->flags & ViewFlags_DrawShadow)
+		if (child->shadow_color.a > 0)
 		{
 			Box *box = box_array->boxes + box_array->count;
 			box_array->count++;
