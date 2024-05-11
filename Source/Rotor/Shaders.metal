@@ -54,19 +54,6 @@ struct RasterizerData
 	F32 blur;
 };
 
-F32
-SRGBLinearFromGamma(F32 x)
-{
-	if (x <= 0.04045)
-	{
-		return x / 12.92;
-	}
-	else
-	{
-		return metal::pow((x + 0.055) / 1.055, 2.4);
-	}
-}
-
 constant global V2 corners[] = {
         {0, 1},
         {0, 0},
@@ -123,11 +110,8 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	        corner * ((box.texture_size + size_rounding * 0.5) / *texture_bounds) +
 	        ((box.texture_origin + origin_rounding * 0.5) / *texture_bounds);
 
-	result.color.r = SRGBLinearFromGamma(box.color.r);
-	result.color.g = SRGBLinearFromGamma(box.color.g);
-	result.color.b = SRGBLinearFromGamma(box.color.b);
-	result.color.a = 1;
-	result.color *= box.color.a;
+	result.color = box.color;
+	result.color.rgb *= result.color.a;
 
 	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
 	result.border_thickness = box.border_thickness;

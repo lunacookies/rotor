@@ -1145,7 +1145,7 @@ GlyphAtlas glyph_atlas;
 	metal_layer.pixelFormat = MTLPixelFormatRGBA16Float;
 	command_queue = [metal_layer.device newCommandQueue];
 
-	metal_layer.colorspace = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
+	metal_layer.colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
 	Assert(metal_layer.colorspace);
 
 	NSError *error = nil;
