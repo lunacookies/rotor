@@ -100,13 +100,7 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	V2 position_ndc = (position / *bounds * 2 - 1) * V2(1, -1);
 
 	result.rasterizer_position_ndc = V4(position_ndc, 0, 1);
-
-	// The rasterizer interpolates in such a manner as to give us
-	// values that correspond with the centers of fragments,
-	// rather than the top-left corners of fragments.
-	// We reposition ourselves to the top-left corners of fragments
-	// by subtracting 0.5.
-	result.position = position - 0.5;
+	result.position = position;
 
 	// Don’t blur more than the size of the box itself.
 	F32 shortest_side = metal::min(box.size.x, box.size.y);
@@ -147,6 +141,13 @@ F32
 Rectangle(V2 sample_position, V2 center, V2 half_size, F32 corner_radius)
 {
 	sample_position -= center;
+
+	// The rasterizer interpolates in such a manner as to give us
+	// values that correspond with the centers of fragments,
+	// rather than the top-left corners of fragments.
+	// We reposition ourselves to the top-left corners of fragments
+	// by subtracting 0.5.
+	sample_position -= 0.5;
 
 	// We sample fragments from the top-left corner. As a result,
 	// all fragments that touch the bottom or right edges of the rectangle
