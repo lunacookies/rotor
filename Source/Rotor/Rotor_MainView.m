@@ -15,6 +15,7 @@ struct Box
 	F32 blur;
 	V2 cutout_origin;
 	V2 cutout_size;
+	B32 invert;
 };
 
 typedef struct BoxRenderChunk BoxRenderChunk;
@@ -131,9 +132,12 @@ struct View
 	V4 border_color;
 	F32 border_thickness;
 	F32 corner_radius;
-	V4 shadow_color;
-	F32 shadow_blur;
-	V2 shadow_offset;
+	V4 drop_shadow_color;
+	F32 drop_shadow_blur;
+	V2 drop_shadow_offset;
+	V4 inner_shadow_color;
+	F32 inner_shadow_blur;
+	V2 inner_shadow_offset;
 	String8 string;
 	RasterizedLine rasterized_line;
 	U64 last_touched_build_index;
@@ -486,25 +490,31 @@ Button(String8 string)
 {
 	View *view = ViewFromString(string);
 	view->string = string;
-	view->padding = v2(10, 2);
+	view->padding = v2(10, 3);
+	view->color = v4(0.35f, 0.35f, 0.35f, 1);
+	view->text_color = v4(1, 1, 1, 1);
 	view->border_thickness = 1;
-	view->border_color = v4(1, 1, 1, 0.1f);
-	view->corner_radius = 2;
-	view->shadow_color = v4(0, 0, 0, 1);
-	view->shadow_blur = 2;
-	view->shadow_offset.y = 1;
+	view->border_color = v4(0, 0, 0, 1);
+	view->corner_radius = 4;
+	view->drop_shadow_color = v4(0, 0, 0, 0.25f);
+	view->drop_shadow_blur = 4;
+	view->drop_shadow_offset.y = 2;
+	view->inner_shadow_color = v4(1, 1, 1, 0.2f);
+	view->inner_shadow_blur = 0;
+	view->inner_shadow_offset.y = 1;
 
 	Signal signal = SignalForView(view);
 
 	if (Pressed(signal))
 	{
-		view->color = v4(0.7f, 0.7f, 0.7f, 1);
-		view->text_color = v4(0, 0, 0, 1);
-	}
-	else
-	{
-		view->color = v4(0.1f, 0.1f, 0.1f, 1);
-		view->text_color = v4(1, 1, 1, 1);
+		view->color = v4(0.15f, 0.15f, 0.15f, 1);
+		view->text_color = v4(0.9f, 0.9f, 0.9f, 1);
+		view->drop_shadow_color = v4(1, 1, 1, 0.2f);
+		view->drop_shadow_blur = 1;
+		view->drop_shadow_offset.y = 1;
+		view->inner_shadow_color = v4(0, 0, 0, 0.5f);
+		view->inner_shadow_blur = 4;
+		view->inner_shadow_offset.y = 2;
 	}
 
 	return signal;
@@ -528,14 +538,14 @@ Checkbox(B32 *value, String8 string)
 	view->child_gap = 5;
 	box->border_thickness = 1;
 	box->corner_radius = 2;
-	box->shadow_color = v4(1, 1, 1, 0.1f);
-	box->shadow_blur = 1;
-	box->shadow_offset.y = 1;
+	box->drop_shadow_color = v4(1, 1, 1, 0.1f);
+	box->drop_shadow_blur = 1;
+	box->drop_shadow_offset.y = 1;
 	mark->corner_radius = 2;
 	mark->color = v4(1, 1, 1, 1);
-	mark->shadow_color = v4(0, 0, 0, 0.5);
-	mark->shadow_blur = 4;
-	mark->shadow_offset.y = 2;
+	mark->drop_shadow_color = v4(0, 0, 0, 0.5);
+	mark->drop_shadow_blur = 4;
+	mark->drop_shadow_offset.y = 2;
 	label->string = string;
 	label->text_color = v4(1, 1, 1, 1);
 
@@ -599,14 +609,14 @@ RadioButton(U32 *selection, U32 option, String8 string)
 	view->child_gap = 5;
 	box->border_thickness = 1;
 	box->corner_radius = 10;
-	box->shadow_color = v4(1, 1, 1, 0.1f);
-	box->shadow_blur = 1;
-	box->shadow_offset.y = 1;
+	box->drop_shadow_color = v4(1, 1, 1, 0.1f);
+	box->drop_shadow_blur = 1;
+	box->drop_shadow_offset.y = 1;
 	mark->color = v4(1, 1, 1, 1);
 	mark->corner_radius = 10;
-	mark->shadow_color = v4(0, 0, 0, 0.5);
-	mark->shadow_blur = 4;
-	mark->shadow_offset.y = 2;
+	mark->drop_shadow_color = v4(0, 0, 0, 0.5);
+	mark->drop_shadow_blur = 4;
+	mark->drop_shadow_offset.y = 2;
 	label->string = string;
 	label->text_color = v4(1, 1, 1, 1);
 
@@ -674,9 +684,9 @@ SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 	track->size_minimum = size;
 	track->color = v4(0, 0, 0, 1);
 	track->corner_radius = size.y;
-	track->shadow_color = v4(1, 1, 1, 0.1f);
-	track->shadow_blur = 1;
-	track->shadow_offset.y = 1;
+	track->drop_shadow_color = v4(1, 1, 1, 0.1f);
+	track->drop_shadow_blur = 1;
+	track->drop_shadow_offset.y = 1;
 	thumb->size_minimum = size;
 	thumb->size_minimum.x *= (*value - minimum) / (maximum - minimum);
 	thumb->corner_radius = size.y;
@@ -868,7 +878,7 @@ StartBuild(void)
 {
 	state->root = ViewAlloc();
 	state->root->flags |= ViewFlags_FirstFrame;
-	state->root->color = v4(0.25, 0.25, 0.25, 1);
+	state->root->color = v4(0.2f, 0.2f, 0.2f, 1);
 	state->root->padding = v2(20, 20);
 	state->root->child_gap = 10;
 	state->current = state->root;
@@ -998,6 +1008,16 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 	chunk->clip_origin = clip_origin;
 	chunk->clip_size = clip_size;
 
+	V2 inside_border_origin = view->origin;
+	inside_border_origin.x += view->border_thickness;
+	inside_border_origin.y += view->border_thickness;
+
+	V2 inside_border_size = view->size;
+	inside_border_size.x -= view->border_thickness * 2;
+	inside_border_size.y -= view->border_thickness * 2;
+
+	F32 inside_border_corner_radius = view->corner_radius - view->border_thickness;
+
 	if (view->color.a > 0)
 	{
 		Box *box = box_array->boxes + box_array->count;
@@ -1005,14 +1025,14 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		chunk->count++;
 		Assert(box_array->count <= box_array->capacity);
 
-		box->origin = view->origin;
+		box->origin = inside_border_origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
-		box->size = view->size;
+		box->size = inside_border_size;
 		box->size.x *= scale_factor;
 		box->size.y *= scale_factor;
 		box->color = view->color;
-		box->corner_radius = view->corner_radius * scale_factor;
+		box->corner_radius = inside_border_corner_radius * scale_factor;
 	}
 
 	if (view->text_color.a > 0)
@@ -1053,7 +1073,7 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
-		if (child->shadow_color.a > 0)
+		if (child->drop_shadow_color.a > 0)
 		{
 			Box *box = box_array->boxes + box_array->count;
 			box_array->count++;
@@ -1061,16 +1081,16 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 			Assert(box_array->count <= box_array->capacity);
 
 			box->origin = child->origin;
-			box->origin.x += child->shadow_offset.x;
-			box->origin.y += child->shadow_offset.y;
+			box->origin.x += child->drop_shadow_offset.x;
+			box->origin.y += child->drop_shadow_offset.y;
 			box->origin.x *= scale_factor;
 			box->origin.y *= scale_factor;
 			box->size = child->size;
 			box->size.x *= scale_factor;
 			box->size.y *= scale_factor;
-			box->color = child->shadow_color;
+			box->color = child->drop_shadow_color;
 			box->corner_radius = child->corner_radius * scale_factor;
-			box->blur = child->shadow_blur * scale_factor;
+			box->blur = child->drop_shadow_blur * scale_factor;
 			box->cutout_origin = child->origin;
 			box->cutout_origin.x *= scale_factor;
 			box->cutout_origin.y *= scale_factor;
@@ -1083,6 +1103,33 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 	for (View *child = view->first; child != 0; child = child->next)
 	{
 		RenderView(child, clip_origin, clip_size, scale_factor, box_array);
+	}
+
+	if (view->inner_shadow_color.a > 0)
+	{
+		Box *box = box_array->boxes + box_array->count;
+		box_array->count++;
+		chunk->count++;
+		Assert(box_array->count <= box_array->capacity);
+
+		box->origin = inside_border_origin;
+		box->origin.x += view->inner_shadow_offset.x;
+		box->origin.y += view->inner_shadow_offset.y;
+		box->origin.x *= scale_factor;
+		box->origin.y *= scale_factor;
+		box->size = inside_border_size;
+		box->size.x *= scale_factor;
+		box->size.y *= scale_factor;
+		box->color = view->inner_shadow_color;
+		box->corner_radius = inside_border_corner_radius * scale_factor;
+		box->blur = view->inner_shadow_blur * scale_factor;
+		box->cutout_origin = inside_border_origin;
+		box->cutout_origin.x *= scale_factor;
+		box->cutout_origin.y *= scale_factor;
+		box->cutout_size = inside_border_size;
+		box->cutout_size.x *= scale_factor;
+		box->cutout_size.y *= scale_factor;
+		box->invert = 1;
 	}
 
 	if (view->border_thickness > 0)
