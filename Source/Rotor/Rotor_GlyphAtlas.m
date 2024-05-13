@@ -24,7 +24,8 @@ GlyphAtlasInit(GlyphAtlas *atlas, Arena *arena, id<MTLDevice> device, F32 scale_
 }
 
 function void
-GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *slot)
+GlyphAtlasAdd(
+        GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, F32 subpixel_offset, GlyphAtlasSlot *slot)
 {
 	if (atlas->used_slot_count == atlas->slot_count)
 	{
@@ -38,6 +39,12 @@ GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *
 	V2U64 glyph_size = {0};
 	glyph_size.x = (U64)CeilF64(bounding_rect.size.width * atlas->scale_factor);
 	glyph_size.y = (U64)CeilF64(bounding_rect.size.height * atlas->scale_factor);
+
+	if (subpixel_offset > 0)
+	{
+		glyph_size.x += 1;
+	}
+
 	F64 glyph_baseline =
 	        (bounding_rect.size.height + bounding_rect.origin.y) * atlas->scale_factor;
 
@@ -58,19 +65,14 @@ GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *
 	slot->origin = atlas->current_row;
 	slot->size = glyph_size;
 	slot->baseline = (U64)glyph_baseline;
+	slot->subpixel_offset = subpixel_offset;
 
 	CGPoint position = {0};
-	position.x = (atlas->current_row.x - bounding_rect.origin.x * atlas->scale_factor) /
+	position.x = (atlas->current_row.x + subpixel_offset -
+	                     bounding_rect.origin.x * atlas->scale_factor) /
 	             atlas->scale_factor;
 	position.y =
 	        (atlas->size.y - (atlas->current_row.y + glyph_baseline)) / atlas->scale_factor;
-
-	CGRect rect = {0};
-	rect.origin.x = atlas->current_row.x / atlas->scale_factor;
-	rect.origin.y =
-	        (atlas->size.y - (atlas->current_row.y + glyph_size.y)) / atlas->scale_factor;
-	rect.size.width = glyph_size.x / atlas->scale_factor;
-	rect.size.height = glyph_size.y / atlas->scale_factor;
 
 	CTFontDrawGlyphs(font, &glyph, &position, 1, atlas->context);
 
@@ -84,7 +86,7 @@ GlyphAtlasAdd(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, GlyphAtlasSlot *
 }
 
 function GlyphAtlasSlot *
-GlyphAtlasGet(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph)
+GlyphAtlasGet(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, F32 subpixel_offset)
 {
 	U64 slot_count_mask = atlas->slot_count - 1;
 	U64 slot_index = glyph & slot_count_mask;
@@ -92,14 +94,15 @@ GlyphAtlasGet(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph)
 	{
 		GlyphAtlasSlot *slot = atlas->slots + slot_index;
 
-		if (slot->glyph == glyph && CFEqual(slot->font, font))
+		if (slot->glyph == glyph && CFEqual(slot->font, font) &&
+		        slot->subpixel_offset == subpixel_offset)
 		{
 			return slot;
 		}
 
 		if (slot->glyph == 0)
 		{
-			GlyphAtlasAdd(atlas, font, glyph, slot);
+			GlyphAtlasAdd(atlas, font, glyph, subpixel_offset, slot);
 			return slot;
 		}
 

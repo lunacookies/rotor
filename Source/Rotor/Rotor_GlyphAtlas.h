@@ -6,6 +6,7 @@ struct GlyphAtlasSlot
 	V2U64 origin;
 	V2U64 size;
 	U64 baseline;
+	F32 subpixel_offset;
 };
 
 typedef struct GlyphAtlas GlyphAtlas;
@@ -27,4 +28,5 @@ struct GlyphAtlas
 
 function void GlyphAtlasInit(
         GlyphAtlas *atlas, Arena *arena, id<MTLDevice> device, F32 scale_factor);
-function GlyphAtlasSlot *GlyphAtlasGet(GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph);
+function GlyphAtlasSlot *GlyphAtlasGet(
+        GlyphAtlas *atlas, CTFontRef font, CGGlyph glyph, F32 subpixel_offset);

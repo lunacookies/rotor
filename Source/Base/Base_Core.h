@@ -97,6 +97,8 @@ typedef enum Axis2
 #define CeilF64 ceil
 #define RoundF32 roundf
 #define RoundF64 round
+#define FloorF32 floorf
+#define FloorF64 floor
 
 function F32 MixF32(F32 x, F32 y, F32 a);
 

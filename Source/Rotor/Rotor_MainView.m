@@ -238,14 +238,19 @@ RasterizeLine(
 
 		for (U64 j = 0; j < run_glyph_count; j++)
 		{
-			CGGlyph glyph = glyphs[j];
-			GlyphAtlasSlot *slot = GlyphAtlasGet(glyph_atlas, run_font, glyph);
+			F32 x = (F32)glyph_positions[j].x * glyph_atlas->scale_factor;
+			F32 y = (F32)glyph_positions[j].y * glyph_atlas->scale_factor;
+			F32 subpixel_offset = x - FloorF32(x);
+			F32 subpixel_resolution = 4;
+			F32 rounded_subpixel_offset =
+			        FloorF32(subpixel_offset * subpixel_resolution) /
+			        subpixel_resolution;
 
-			result->positions[glyph_index].x =
-			        RoundF32((F32)glyph_positions[j].x * glyph_atlas->scale_factor);
-			result->positions[glyph_index].y =
-			        RoundF32((F32)glyph_positions[j].y * glyph_atlas->scale_factor -
-			                 slot->baseline);
+			GlyphAtlasSlot *slot = GlyphAtlasGet(
+			        glyph_atlas, run_font, glyphs[j], rounded_subpixel_offset);
+
+			result->positions[glyph_index].x = FloorF32(x);
+			result->positions[glyph_index].y = FloorF32(y - slot->baseline);
 			result->slots[glyph_index] = slot;
 
 			glyph_index++;
