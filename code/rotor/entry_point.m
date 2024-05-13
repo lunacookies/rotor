@@ -3,15 +3,15 @@
 @import QuartzCore;
 @import simd;
 
-#include "Base/Base_Include.h"
-#include "OS/OS_Include.h"
-#include "Rotor_GlyphAtlas.h"
-#include "Rotor_MainView.h"
+#include "base/base_include.h"
+#include "os/os_include.h"
+#include "rotor_glyph_atlas.h"
+#include "rotor_main_view.h"
 
-#include "Base/Base_Include.c"
-#include "OS/OS_Include.c"
-#include "Rotor_GlyphAtlas.m"
-#include "Rotor_MainView.m"
+#include "base/base_include.c"
+#include "os/os_include.c"
+#include "rotor_glyph_atlas.m"
+#include "rotor_main_view.m"
 
 function NSString *
 AppName(void)

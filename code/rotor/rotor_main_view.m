@@ -1276,7 +1276,7 @@ GlyphAtlas glyph_atlas;
 	NSError *error = nil;
 
 	NSBundle *bundle = [NSBundle mainBundle];
-	NSURL *library_url = [bundle URLForResource:@"Shaders" withExtension:@"metallib"];
+	NSURL *library_url = [bundle URLForResource:@"shaders" withExtension:@"metallib"];
 	id<MTLLibrary> library = [metal_layer.device newLibraryWithURL:library_url error:&error];
 	if (library == nil)
 	{
