@@ -60,8 +60,9 @@ enum : SignalFlags
 {
 	SignalFlags_Clicked = (1 << 0),
 	SignalFlags_Pressed = (1 << 1),
-	SignalFlags_Dragged = (1 << 2),
-	SignalFlags_Scrolled = (1 << 3),
+	SignalFlags_Hovered = (1 << 2),
+	SignalFlags_Dragged = (1 << 3),
+	SignalFlags_Scrolled = (1 << 4),
 };
 
 typedef struct Signal Signal;
@@ -83,6 +84,12 @@ function B32
 Pressed(Signal signal)
 {
 	return signal.flags & SignalFlags_Pressed;
+}
+
+function B32
+Hovered(Signal signal)
+{
+	return signal.flags & SignalFlags_Hovered;
 }
 
 function B32
@@ -148,12 +155,14 @@ struct View
 	RasterizedLine rasterized_line;
 	U64 last_touched_build_index;
 	B32 pressed;
+	B32 hovered;
 };
 
 typedef enum EventKind
 {
 	EventKind_MouseUp = 1,
 	EventKind_MouseDown,
+	EventKind_MouseMoved,
 	EventKind_MouseDragged,
 	EventKind_Scroll,
 } EventKind;
@@ -414,6 +423,10 @@ SignalForView(View *view)
 	{
 		result.flags |= SignalFlags_Pressed;
 	}
+	if (view->hovered)
+	{
+		result.flags |= SignalFlags_Hovered;
+	}
 
 	for (Event *event = state->first_event; event != 0; event = event->next)
 	{
@@ -429,6 +442,15 @@ SignalForView(View *view)
 		        state->last_mouse_down_location.y >= view->origin.y &&
 		        state->last_mouse_down_location.x <= view->origin.x + view->size.x &&
 		        state->last_mouse_down_location.y <= view->origin.y + view->size.y;
+
+		if (in_bounds)
+		{
+			result.flags |= SignalFlags_Hovered;
+		}
+		else
+		{
+			result.flags &= ~SignalFlags_Hovered;
+		}
 
 		switch (event->kind)
 		{
@@ -450,6 +472,11 @@ SignalForView(View *view)
 					state->last_mouse_drag_location = event->location;
 				}
 				state->last_mouse_down_location = event->location;
+			}
+			break;
+
+			case EventKind_MouseMoved:
+			{
 			}
 			break;
 
@@ -489,6 +516,7 @@ SignalForView(View *view)
 	}
 
 	view->pressed = result.flags & SignalFlags_Pressed;
+	view->hovered = result.flags & SignalFlags_Hovered;
 	return result;
 }
 
@@ -520,6 +548,11 @@ Button(String8 string)
 	view->inner_shadow_offset.y = 1;
 
 	Signal signal = SignalForView(view);
+
+	if (Hovered(signal))
+	{
+		view->color = v4(0.45f, 0.45f, 0.45f, 1);
+	}
 
 	if (Pressed(signal))
 	{
@@ -1380,11 +1413,24 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 	return kCVReturnSuccess;
 }
 
+- (void)updateTrackingAreas
+{
+	NSTrackingAreaOptions options = NSTrackingActiveAlways | NSTrackingMouseMoved;
+	[self addTrackingArea:[[NSTrackingArea alloc] initWithRect:self.bounds
+	                                                   options:options
+	                                                     owner:self
+	                                                  userInfo:nil]];
+}
+
 - (void)mouseUp:(NSEvent *)event
 {
 	[self handleEvent:event];
 }
 - (void)mouseDown:(NSEvent *)event
+{
+	[self handleEvent:event];
+}
+- (void)mouseMoved:(NSEvent *)event
 {
 	[self handleEvent:event];
 }
@@ -1414,6 +1460,12 @@ DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
 		case NSEventTypeLeftMouseDown:
 		{
 			kind = EventKind_MouseDown;
+		}
+		break;
+
+		case NSEventTypeMouseMoved:
+		{
+			kind = EventKind_MouseMoved;
 		}
 		break;
 
