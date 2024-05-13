@@ -33,7 +33,7 @@ struct Box
 	V2 texture_size;
 	F32 border_thickness;
 	F32 corner_radius;
-	F32 blur;
+	F32 softness;
 	V2 cutout_origin;
 	V2 cutout_size;
 	B32 invert;
@@ -52,7 +52,7 @@ struct RasterizerData
 	B32 untextured;
 	F32 border_thickness;
 	F32 corner_radius;
-	F32 blur;
+	F32 softness;
 	B32 invert;
 };
 
@@ -91,17 +91,17 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.rasterizer_position_ndc = V4(position_ndc, 0, 1);
 	result.position = position;
 
-	// Don’t blur more than the size of the box itself.
+	// Don’t apply more softness than the size of the box itself.
 	F32 shortest_side = metal::min(box.size.x, box.size.y);
-	box.blur = metal::min(box.blur, shortest_side);
+	box.softness = metal::min(box.softness, shortest_side);
 
 	result.center = box.origin + box.size * 0.5;
 
-	// By default the entirety of the blur sits outside of the box,
+	// By default the entirety of the softness sits outside of the box,
 	// but we want half to sit within the box and the other half outside the box.
-	// Thus, we need to move each edge of the box inwards by 0.5 * blur.
-	// There are two edges in each dimension, so we subtract 1 * blur.
-	result.half_size = 0.5 * (box.size - box.blur);
+	// Thus, we need to move each edge of the box inwards by 0.5 * softness.
+	// There are two edges in each dimension, so we subtract 1 * softness.
+	result.half_size = 0.5 * (box.size - box.softness);
 	result.half_size = metal::max(result.half_size, 0);
 
 	result.cutout_center = box.cutout_origin + box.cutout_size * 0.5;
@@ -117,7 +117,7 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
 	result.border_thickness = box.border_thickness;
 	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
-	result.blur = box.blur;
+	result.softness = box.softness;
 	result.invert = box.invert;
 
 	return result;
@@ -156,11 +156,11 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 	F32 distance = Rectangle(data.position, data.center, data.half_size, data.corner_radius);
 	if (data.invert)
 	{
-		factor *= metal::saturate(distance / (data.blur + 1));
+		factor *= metal::saturate(distance / (data.softness + 1));
 	}
 	else
 	{
-		factor *= 1 - metal::saturate(distance / (data.blur + 1));
+		factor *= 1 - metal::saturate(distance / (data.softness + 1));
 	}
 
 	if (data.cutout_half_size.x > 0 || data.cutout_half_size.y > 0)
@@ -182,7 +182,7 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 		distance = Rectangle(data.position, data.center,
 		        data.half_size - data.border_thickness,
 		        data.corner_radius - data.border_thickness);
-		factor *= metal::saturate(distance / (data.blur + 1));
+		factor *= metal::saturate(distance / (data.softness + 1));
 	}
 
 	if (!data.untextured)

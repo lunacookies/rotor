@@ -12,7 +12,7 @@ struct Box
 	V2 texture_size;
 	F32 border_thickness;
 	F32 corner_radius;
-	F32 blur;
+	F32 softness;
 	V2 cutout_origin;
 	V2 cutout_size;
 	B32 invert;
@@ -128,11 +128,11 @@ struct View
 	F32 corner_radius;
 
 	V4 drop_shadow_color;
-	F32 drop_shadow_blur;
+	F32 drop_shadow_softness;
 	V2 drop_shadow_offset;
 
 	V4 inner_shadow_color;
-	F32 inner_shadow_blur;
+	F32 inner_shadow_softness;
 	V2 inner_shadow_offset;
 
 	B32 clip;
@@ -559,7 +559,7 @@ Button(String8 string)
 	view->border_color = v4(0, 0, 0, 1);
 	view->corner_radius = 4;
 	view->drop_shadow_color = v4(0, 0, 0, 0.25f);
-	view->drop_shadow_blur = 4;
+	view->drop_shadow_softness = 4;
 	view->drop_shadow_offset.y = 2;
 	view->inner_shadow_color = v4(1, 1, 1, 0.2f);
 	view->inner_shadow_offset.y = 1;
@@ -576,10 +576,10 @@ Button(String8 string)
 		view->color = v4(0.15f, 0.15f, 0.15f, 1);
 		view->text_color = v4(0.9f, 0.9f, 0.9f, 1);
 		view->drop_shadow_color = v4(1, 1, 1, 0.2f);
-		view->drop_shadow_blur = 1;
+		view->drop_shadow_softness = 1;
 		view->drop_shadow_offset.y = 1;
 		view->inner_shadow_color = v4(0, 0, 0, 0.5f);
-		view->inner_shadow_blur = 4;
+		view->inner_shadow_softness = 4;
 		view->inner_shadow_offset.y = 2;
 	}
 
@@ -605,12 +605,12 @@ Checkbox(B32 *value, String8 string)
 	box->border_thickness = 1;
 	box->corner_radius = 2;
 	box->drop_shadow_color = v4(1, 1, 1, 0.1f);
-	box->drop_shadow_blur = 1;
+	box->drop_shadow_softness = 1;
 	box->drop_shadow_offset.y = 1;
 	mark->corner_radius = 2;
 	mark->color = v4(1, 1, 1, 1);
 	mark->drop_shadow_color = v4(0, 0, 0, 0.5);
-	mark->drop_shadow_blur = 4;
+	mark->drop_shadow_softness = 4;
 	mark->drop_shadow_offset.y = 2;
 	label->string = string;
 	label->text_color = v4(1, 1, 1, 1);
@@ -676,12 +676,12 @@ RadioButton(U32 *selection, U32 option, String8 string)
 	box->border_thickness = 1;
 	box->corner_radius = 10;
 	box->drop_shadow_color = v4(1, 1, 1, 0.1f);
-	box->drop_shadow_blur = 1;
+	box->drop_shadow_softness = 1;
 	box->drop_shadow_offset.y = 1;
 	mark->color = v4(1, 1, 1, 1);
 	mark->corner_radius = 10;
 	mark->drop_shadow_color = v4(0, 0, 0, 0.5);
-	mark->drop_shadow_blur = 4;
+	mark->drop_shadow_softness = 4;
 	mark->drop_shadow_offset.y = 2;
 	label->string = string;
 	label->text_color = v4(1, 1, 1, 1);
@@ -751,7 +751,7 @@ SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 	track->color = v4(0, 0, 0, 1);
 	track->corner_radius = size.y;
 	track->drop_shadow_color = v4(1, 1, 1, 0.1f);
-	track->drop_shadow_blur = 1;
+	track->drop_shadow_softness = 1;
 	track->drop_shadow_offset.y = 1;
 	thumb->size_minimum = size;
 	thumb->size_minimum.x *= (*value - minimum) / (maximum - minimum);
@@ -1167,7 +1167,7 @@ RenderViewState(
 			box->size.y *= scale_factor;
 			box->color = child->view.drop_shadow_color;
 			box->corner_radius = child->view.corner_radius * scale_factor;
-			box->blur = child->view.drop_shadow_blur * scale_factor;
+			box->softness = child->view.drop_shadow_softness * scale_factor;
 			box->cutout_origin = child->origin;
 			box->cutout_origin.x *= scale_factor;
 			box->cutout_origin.y *= scale_factor;
@@ -1199,7 +1199,7 @@ RenderViewState(
 		box->size.y *= scale_factor;
 		box->color = view_state->view.inner_shadow_color;
 		box->corner_radius = inside_border_corner_radius * scale_factor;
-		box->blur = view_state->view.inner_shadow_blur * scale_factor;
+		box->softness = view_state->view.inner_shadow_softness * scale_factor;
 		box->cutout_origin = inside_border_origin;
 		box->cutout_origin.x *= scale_factor;
 		box->cutout_origin.y *= scale_factor;
