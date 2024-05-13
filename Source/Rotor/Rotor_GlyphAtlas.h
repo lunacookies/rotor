@@ -12,7 +12,7 @@ typedef struct GlyphAtlas GlyphAtlas;
 struct GlyphAtlas
 {
 	V2U64 size;
-	V2U64 size_pixels;
+	F32 scale_factor;
 	U32 *pixels;
 	CGContextRef context;
 	id<MTLTexture> texture;

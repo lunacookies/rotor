@@ -107,10 +107,9 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.cutout_center = box.cutout_origin + box.cutout_size * 0.5;
 	result.cutout_half_size = 0.5 * box.cutout_size;
 
-	// Multiply by 0.5 to account for glyph atlas using points rather than pixels.
 	result.texture_coordinates =
-	        corner * ((box.texture_size + size_rounding * 0.5) / *texture_bounds) +
-	        ((box.texture_origin + origin_rounding * 0.5) / *texture_bounds);
+	        ((box.texture_origin + origin_rounding) / *texture_bounds) +
+	        ((box.texture_size + size_rounding) / *texture_bounds) * corner;
 
 	result.color = box.color;
 	result.color.rgb *= result.color.a;

@@ -241,9 +241,11 @@ RasterizeLine(
 			CGGlyph glyph = glyphs[j];
 			GlyphAtlasSlot *slot = GlyphAtlasGet(glyph_atlas, run_font, glyph);
 
-			result->positions[glyph_index].x = RoundF32((F32)glyph_positions[j].x);
+			result->positions[glyph_index].x =
+			        RoundF32((F32)glyph_positions[j].x * glyph_atlas->scale_factor);
 			result->positions[glyph_index].y =
-			        RoundF32((F32)glyph_positions[j].y - slot->baseline);
+			        RoundF32((F32)glyph_positions[j].y * glyph_atlas->scale_factor -
+			                 slot->baseline);
 			result->slots[glyph_index] = slot;
 
 			glyph_index++;
@@ -1040,17 +1042,15 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		V2 text_origin = view->origin;
 		text_origin.x += view->padding.x;
 		text_origin.y += view->padding.y;
-		text_origin.y += RoundF32(view->rasterized_line.bounds.y +
-		                          (F32)CTFontGetCapHeight(state->font)) *
-		                 0.5f;
+		text_origin.x *= scale_factor;
+		text_origin.y *= scale_factor;
+		text_origin.y += RoundF32(
+		        (view->rasterized_line.bounds.y + (F32)CTFontGetCapHeight(state->font)) *
+		        scale_factor * 0.5f);
 
 		for (U64 glyph_index = 0; glyph_index < view->rasterized_line.glyph_count;
 		        glyph_index++)
 		{
-			V2 position = view->rasterized_line.positions[glyph_index];
-			position.x += text_origin.x;
-			position.y += text_origin.y;
-
 			GlyphAtlasSlot *slot = view->rasterized_line.slots[glyph_index];
 
 			Box *box = box_array->boxes + box_array->count;
@@ -1058,13 +1058,13 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 			chunk->count++;
 			Assert(box_array->count <= box_array->capacity);
 
-			box->origin = position;
-			box->origin.x *= scale_factor;
-			box->origin.y *= scale_factor;
+			box->origin = view->rasterized_line.positions[glyph_index];
+			box->origin.x += text_origin.x;
+			box->origin.y += text_origin.y;
 			box->texture_origin.x = slot->origin.x;
 			box->texture_origin.y = slot->origin.y;
-			box->size.x = slot->size.x * scale_factor;
-			box->size.y = slot->size.y * scale_factor;
+			box->size.x = slot->size.x;
+			box->size.y = slot->size.y;
 			box->texture_size.x = slot->size.x;
 			box->texture_size.y = slot->size.y;
 			box->color = view->text_color;
@@ -1228,11 +1228,8 @@ GlyphAtlas glyph_atlas;
 		abort();
 	}
 
-	StateInit(frame_arena, &glyph_atlas);
-
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
-	CVDisplayLinkStart(display_link);
 
 	return self;
 }
@@ -1273,8 +1270,10 @@ GlyphAtlas glyph_atlas;
 
 	[encoder setRenderPipelineState:pipeline_state];
 
-	V2 texture_bounds = v2(1024, 1024);
-	[encoder setVertexBytes:&texture_bounds length:sizeof(texture_bounds) atIndex:1];
+	V2 glyph_atlas_size = {0};
+	glyph_atlas_size.x = (F32)glyph_atlas.size.x;
+	glyph_atlas_size.y = (F32)glyph_atlas.size.y;
+	[encoder setVertexBytes:&glyph_atlas_size length:sizeof(glyph_atlas_size) atIndex:1];
 
 	V2 viewport_size_pixels = viewport_size;
 	viewport_size_pixels.x *= scale_factor;
@@ -1335,8 +1334,9 @@ GlyphAtlas glyph_atlas;
 	F32 scale_factor = (F32)self.window.backingScaleFactor;
 
 	GlyphAtlasInit(&glyph_atlas, permanent_arena, metal_layer.device, scale_factor);
-
+	StateInit(frame_arena, &glyph_atlas);
 	metal_layer.contentsScale = self.window.backingScaleFactor;
+	CVDisplayLinkStart(display_link);
 }
 
 - (void)setFrameSize:(NSSize)size
