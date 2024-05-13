@@ -945,7 +945,6 @@ LayoutViewState(ViewState *view_state, V2 origin)
 function void
 LayoutUI(V2 viewport_size)
 {
-	state->root->view.size_minimum = viewport_size;
 	LayoutViewState(state->root, v2(0, 0));
 }
 
@@ -954,7 +953,7 @@ StartBuild(void)
 {
 	state->root = ViewStateAlloc();
 	state->root->is_first_frame = 1;
-	state->root->view.color = v4(0.2f, 0.2f, 0.2f, 1);
+	state->root->view.color = v4(0.1f, 0.1f, 0.1f, 0.7f);
 	state->root->view.padding = v2(20, 20);
 	state->root->view.child_gap = 10;
 	state->root->view.child_layout_axis = Axis2_Y;
@@ -1248,6 +1247,13 @@ CVDisplayLinkRef display_link;
 
 GlyphAtlas glyph_atlas;
 
+id<MTLRenderPipelineState> game_pipeline_state;
+U64 game_count;
+V2 *game_positions;
+V2 *game_velocities;
+F32 *game_sizes;
+V3 *game_colors;
+
 - (instancetype)initWithFrame:(NSRect)frame
 {
 	self = [super initWithFrame:frame];
@@ -1306,6 +1312,39 @@ GlyphAtlas glyph_atlas;
 		abort();
 	}
 
+	descriptor.vertexFunction = [library newFunctionWithName:@"GameVertexShader"];
+	descriptor.fragmentFunction = [library newFunctionWithName:@"GameFragmentShader"];
+
+	game_pipeline_state = [metal_layer.device newRenderPipelineStateWithDescriptor:descriptor
+	                                                                         error:&error];
+
+	if (game_pipeline_state == nil)
+	{
+		[[NSAlert alertWithError:error] runModal];
+		abort();
+	}
+
+	game_count = 256;
+	game_positions = PushArray(permanent_arena, V2, game_count);
+	game_velocities = PushArray(permanent_arena, V2, game_count);
+	game_sizes = PushArray(permanent_arena, F32, game_count);
+	game_colors = PushArray(permanent_arena, V3, game_count);
+
+	for (U64 i = 0; i < game_count; i++)
+	{
+		game_positions[i].x = (F32)arc4random_uniform(1000) - 500;
+		game_positions[i].y = (F32)arc4random_uniform(1000) - 500;
+
+		game_velocities[i].x = ((F32)arc4random_uniform(1000) - 500) / 200;
+		game_velocities[i].y = ((F32)arc4random_uniform(1000) - 500) / 200;
+
+		game_sizes[i] = (F32)arc4random_uniform(100);
+
+		game_colors[i].r = (F32)arc4random_uniform(1024) / 1024;
+		game_colors[i].g = (F32)arc4random_uniform(1024) / 1024;
+		game_colors[i].b = (F32)arc4random_uniform(1024) / 1024;
+	}
+
 	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
 	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
 
@@ -1333,6 +1372,32 @@ GlyphAtlas glyph_atlas;
 	EndBuild(viewport_size);
 	RenderUI(viewport_size, scale_factor, &box_array);
 
+	for (U64 i = 0; i < game_count; i++)
+	{
+		game_positions[i].x += game_velocities[i].x;
+		game_positions[i].y += game_velocities[i].y;
+
+		if (game_positions[i].x < viewport_size.x * -0.5)
+		{
+			game_velocities[i].x = AbsF32(game_velocities[i].x);
+		}
+
+		if (game_positions[i].x > viewport_size.x * 0.5)
+		{
+			game_velocities[i].x = -AbsF32(game_velocities[i].x);
+		}
+
+		if (game_positions[i].y < viewport_size.y * -0.5)
+		{
+			game_velocities[i].y = AbsF32(game_velocities[i].y);
+		}
+
+		if (game_positions[i].y > viewport_size.y * 0.5)
+		{
+			game_velocities[i].y = -AbsF32(game_velocities[i].y);
+		}
+	}
+
 	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
 
 	id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
@@ -1341,10 +1406,21 @@ GlyphAtlas glyph_atlas;
 	descriptor.colorAttachments[0].texture = drawable.texture;
 	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
 	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(1, 1, 0, 1);
+	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
 
 	id<MTLRenderCommandEncoder> encoder =
 	        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
+
+	[encoder setRenderPipelineState:game_pipeline_state];
+
+	[encoder setVertexBytes:game_positions length:game_count * sizeof(V2) atIndex:0];
+	[encoder setVertexBytes:game_sizes length:game_count * sizeof(F32) atIndex:1];
+	[encoder setVertexBytes:game_colors length:game_count * sizeof(V3) atIndex:2];
+	[encoder setVertexBytes:&viewport_size length:sizeof(viewport_size) atIndex:3];
+	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+	            vertexStart:0
+	            vertexCount:6
+	          instanceCount:game_count];
 
 	[encoder setRenderPipelineState:pipeline_state];
 

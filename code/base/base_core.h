@@ -99,6 +99,8 @@ typedef enum Axis2
 #define RoundF64 round
 #define FloorF32 floorf
 #define FloorF64 floor
+#define AbsF32 fabsf
+#define AbsF64 fabs
 
 function F32 MixF32(F32 x, F32 y, F32 a);
 

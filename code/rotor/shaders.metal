@@ -194,3 +194,30 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 
 	return data.color * factor;
 }
+
+struct GameRasterizerData
+{
+	V4 position [[position]];
+	V3 color;
+};
+
+vertex GameRasterizerData
+GameVertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]],
+        constant V2 *positions, constant F32 *sizes, constant V3 *colors, constant V2 *bounds)
+{
+	V2 corner = corners[vertex_id];
+	V2 position = positions[instance_id];
+	F32 size = sizes[instance_id];
+
+	GameRasterizerData result = {0};
+	result.position.xy = (position / *bounds + size * corner / *bounds) * 2;
+	result.position.w = 1;
+	result.color = colors[instance_id];
+	return result;
+}
+
+fragment V4
+GameFragmentShader(GameRasterizerData data [[stage_in]])
+{
+	return V4(data.color, 1);
+}
