@@ -55,14 +55,20 @@ enum : ViewFlags
 	ViewFlags_Clip = (1 << 1),
 };
 
+typedef U32 SignalFlags;
+enum : SignalFlags
+{
+	SignalFlags_Clicked = (1 << 0),
+	SignalFlags_Pressed = (1 << 1),
+	SignalFlags_Dragged = (1 << 2),
+	SignalFlags_Scrolled = (1 << 3),
+};
+
 typedef struct Signal Signal;
 struct Signal
 {
 	V2 location;
-	B32 clicked;
-	B32 pressed;
-	B32 dragged;
-	B32 scrolled;
+	SignalFlags flags;
 	V2 drag_distance;
 	V2 scroll_distance;
 };
@@ -70,25 +76,25 @@ struct Signal
 function B32
 Clicked(Signal signal)
 {
-	return signal.clicked;
+	return signal.flags & SignalFlags_Clicked;
 }
 
 function B32
 Pressed(Signal signal)
 {
-	return signal.pressed;
+	return signal.flags & SignalFlags_Pressed;
 }
 
 function B32
 Dragged(Signal signal)
 {
-	return signal.dragged;
+	return signal.flags & SignalFlags_Dragged;
 }
 
 function B32
 Scrolled(Signal signal)
 {
-	return signal.scrolled;
+	return signal.flags & SignalFlags_Scrolled;
 }
 
 function U64
@@ -404,7 +410,10 @@ function Signal
 SignalForView(View *view)
 {
 	Signal result = {0};
-	result.pressed = view->pressed;
+	if (view->pressed)
+	{
+		result.flags |= SignalFlags_Pressed;
+	}
 
 	for (Event *event = state->first_event; event != 0; event = event->next)
 	{
@@ -425,10 +434,10 @@ SignalForView(View *view)
 		{
 			case EventKind_MouseUp:
 			{
-				result.pressed = 0;
+				result.flags &= ~SignalFlags_Pressed;
 				if (in_bounds && last_mouse_down_in_bounds)
 				{
-					result.clicked = 1;
+					result.flags |= SignalFlags_Clicked;
 				}
 			}
 			break;
@@ -437,7 +446,7 @@ SignalForView(View *view)
 			{
 				if (in_bounds)
 				{
-					result.pressed = 1;
+					result.flags |= SignalFlags_Pressed;
 					state->last_mouse_drag_location = event->location;
 				}
 				state->last_mouse_down_location = event->location;
@@ -448,21 +457,21 @@ SignalForView(View *view)
 			{
 				if (last_mouse_down_in_bounds)
 				{
-					result.dragged = 1;
+					result.flags |= SignalFlags_Dragged;
 					result.drag_distance.x += event->location.x -
 					                          state->last_mouse_drag_location.x;
 					result.drag_distance.y += event->location.y -
 					                          state->last_mouse_drag_location.y;
 					if (in_bounds)
 					{
-						result.pressed = 1;
+						result.flags |= SignalFlags_Pressed;
 					}
 					state->last_mouse_drag_location = event->location;
 				}
 
 				if (!in_bounds)
 				{
-					result.pressed = 0;
+					result.flags &= ~SignalFlags_Pressed;
 				}
 			}
 			break;
@@ -471,7 +480,7 @@ SignalForView(View *view)
 			{
 				if (in_bounds)
 				{
-					result.scrolled = 1;
+					result.flags |= SignalFlags_Scrolled;
 					result.scroll_distance = event->scroll_distance;
 				}
 			}
@@ -479,7 +488,7 @@ SignalForView(View *view)
 		}
 	}
 
-	view->pressed = result.pressed;
+	view->pressed = result.flags & SignalFlags_Pressed;
 	return result;
 }
 
