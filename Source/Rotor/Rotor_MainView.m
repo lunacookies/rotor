@@ -48,13 +48,6 @@ struct RasterizedLine
 	GlyphAtlasSlot **slots;
 };
 
-typedef U32 ViewFlags;
-enum : ViewFlags
-{
-	ViewFlags_FirstFrame = (1 << 0),
-	ViewFlags_Clip = (1 << 1),
-};
-
 typedef U32 SignalFlags;
 enum : SignalFlags
 {
@@ -118,42 +111,59 @@ KeyFromString(String8 string, U64 seed)
 typedef struct View View;
 struct View
 {
-	View *next;
-	View *first;
-	View *last;
-	View *parent;
+	String8 string;
 
-	View *next_all;
-	View *prev_all;
+	V2 padding;
+	V2 size_minimum;
+	F32 child_gap;
+	Axis2 child_layout_axis;
+	V2 child_offset;
+
+	V4 color;
+	V4 text_color;
+
+	V4 border_color;
+	F32 border_thickness;
+
+	F32 corner_radius;
+
+	V4 drop_shadow_color;
+	F32 drop_shadow_blur;
+	V2 drop_shadow_offset;
+
+	V4 inner_shadow_color;
+	F32 inner_shadow_blur;
+	V2 inner_shadow_offset;
+
+	B32 clip;
+};
+
+typedef struct ViewState ViewState;
+struct ViewState
+{
+	ViewState *next;
+	ViewState *first;
+	ViewState *last;
+	ViewState *parent;
 
 	U64 key;
+	ViewState *hash_next;
+	ViewState *hash_prev;
 
-	ViewFlags flags;
+	View view;
+
 	V2 origin;
 	V2 origin_target;
 	V2 origin_velocity;
 	V2 size;
 	V2 size_target;
-	V2 size_minimum;
 	V2 size_velocity;
-	V2 padding;
-	F32 child_gap;
-	Axis2 child_layout_axis;
-	V2 child_offset;
-	V4 color;
-	V4 text_color;
-	V4 border_color;
-	F32 border_thickness;
-	F32 corner_radius;
-	V4 drop_shadow_color;
-	F32 drop_shadow_blur;
-	V2 drop_shadow_offset;
-	V4 inner_shadow_color;
-	F32 inner_shadow_blur;
-	V2 inner_shadow_offset;
-	String8 string;
+
 	RasterizedLine rasterized_line;
+
+	B32 is_first_frame;
 	U64 last_touched_build_index;
+
 	B32 pressed;
 	B32 hovered;
 };
@@ -179,12 +189,12 @@ struct Event
 typedef struct State State;
 struct State
 {
-	View *root;
-	View *current;
+	ViewState *root;
+	ViewState *current;
 
-	View *first_view_all;
-	View *last_view_all;
-	View *first_free_view;
+	ViewState *first_view_state;
+	ViewState *last_view_state;
+	ViewState *first_free_view_state;
 
 	Event *first_event;
 	Event *last_event;
@@ -302,86 +312,90 @@ MakeParentCurrent(void)
 	state->current = state->current->parent;
 }
 
-function View *
-ViewAlloc(void)
+function ViewState *
+ViewStateAlloc(void)
 {
-	View *result = state->first_free_view;
+	ViewState *result = state->first_free_view_state;
 	if (result == 0)
 	{
-		result = PushStruct(state->arena, View);
+		result = PushStruct(state->arena, ViewState);
 	}
 	else
 	{
-		state->first_free_view = state->first_free_view->next_all;
+		state->first_free_view_state = state->first_free_view_state->hash_next;
 		MemoryZeroStruct(result);
 	}
 
-	if (state->first_view_all == 0)
+	if (state->first_view_state == 0)
 	{
-		state->first_view_all = result;
+		state->first_view_state = result;
 	}
 	else
 	{
-		state->last_view_all->next_all = result;
+		state->last_view_state->hash_next = result;
 	}
 
-	result->child_layout_axis = Axis2_Y;
-	result->prev_all = state->last_view_all;
-	state->last_view_all = result;
+	result->hash_prev = state->last_view_state;
+	state->last_view_state = result;
 	return result;
 }
 
 function void
-ViewRelease(View *view)
+ViewStateRelease(ViewState *view_state)
 {
-	if (state->first_view_all == view)
+	if (state->first_view_state == view_state)
 	{
-		state->first_view_all = view->next_all;
+		state->first_view_state = view_state->hash_next;
 	}
 
-	if (state->last_view_all == view)
+	if (state->last_view_state == view_state)
 	{
-		state->last_view_all = view->prev_all;
+		state->last_view_state = view_state->hash_prev;
 	}
 
-	if (view->prev_all != 0)
+	if (view_state->hash_prev != 0)
 	{
-		view->prev_all->next_all = view->next_all;
+		view_state->hash_prev->hash_next = view_state->hash_next;
 	}
 
-	if (view->next_all != 0)
+	if (view_state->hash_next != 0)
 	{
-		view->next_all->prev_all = view->prev_all;
+		view_state->hash_next->hash_prev = view_state->hash_prev;
 	}
 
-	view->next_all = state->first_free_view;
-	state->first_free_view = view;
+	view_state->hash_next = state->first_free_view_state;
+	state->first_free_view_state = view_state;
 }
 
 function void
-ViewPush(View *view)
+ViewStatePush(ViewState *view_state)
 {
-	view->next = 0;
-	view->first = 0;
-	view->last = 0;
-	view->parent = 0;
+	view_state->last_touched_build_index = state->build_index;
 
-	// Push view onto the list of children of the current view.
-	view->parent = state->current;
+	MemoryZeroStruct(&view_state->view);
+	view_state->view.child_layout_axis = Axis2_Y;
+
+	view_state->next = 0;
+	view_state->first = 0;
+	view_state->last = 0;
+	view_state->parent = 0;
+
+	// Push view state onto the list of children of the current view state.
+	view_state->parent = state->current;
 	if (state->current->first == 0)
 	{
 		Assert(state->current->last == 0);
-		state->current->first = view;
+		state->current->first = view_state;
 	}
 	else
 	{
-		state->current->last->next = view;
+		state->current->last->next = view_state;
 	}
-	state->current->last = view;
+	state->current->last = view_state;
 
 	if (state->make_next_current)
 	{
-		state->current = view;
+		state->current = view_state;
 		state->make_next_current = 0;
 	}
 }
@@ -389,41 +403,43 @@ ViewPush(View *view)
 function View *
 ViewFromString(String8 string)
 {
-	View *result = 0;
+	ViewState *result = 0;
 	U64 key = KeyFromString(string, state->current->key);
 
-	for (View *view = state->first_view_all; view != 0; view = view->next_all)
+	for (ViewState *view_state = state->first_view_state; view_state != 0;
+	        view_state = view_state->hash_next)
 	{
-		if (view->key == key)
+		if (view_state->key == key)
 		{
-			result = view;
-			result->flags &= ~ViewFlags_FirstFrame;
+			result = view_state;
+			result->is_first_frame = 0;
 			break;
 		}
 	}
 
 	if (result == 0)
 	{
-		result = ViewAlloc();
+		result = ViewStateAlloc();
 		result->key = key;
-		result->flags |= ViewFlags_FirstFrame;
+		result->is_first_frame = 1;
 	}
 
-	ViewPush(result);
-	result->last_touched_build_index = state->build_index;
+	ViewStatePush(result);
 
-	return result;
+	return &result->view;
 }
 
 function Signal
 SignalForView(View *view)
 {
+	ViewState *view_state = (ViewState *)((U8 *)view - offsetof(ViewState, view));
+
 	Signal result = {0};
-	if (view->pressed)
+	if (view_state->pressed)
 	{
 		result.flags |= SignalFlags_Pressed;
 	}
-	if (view->hovered)
+	if (view_state->hovered)
 	{
 		result.flags |= SignalFlags_Hovered;
 	}
@@ -432,16 +448,18 @@ SignalForView(View *view)
 	{
 		result.location = event->location;
 
-		B32 in_bounds = event->location.x >= view->origin.x &&
-		                event->location.y >= view->origin.y &&
-		                event->location.x <= view->origin.x + view->size.x &&
-		                event->location.y <= view->origin.y + view->size.y;
+		B32 in_bounds = event->location.x >= view_state->origin.x &&
+		                event->location.y >= view_state->origin.y &&
+		                event->location.x <= view_state->origin.x + view_state->size.x &&
+		                event->location.y <= view_state->origin.y + view_state->size.y;
 
 		B32 last_mouse_down_in_bounds =
-		        state->last_mouse_down_location.x >= view->origin.x &&
-		        state->last_mouse_down_location.y >= view->origin.y &&
-		        state->last_mouse_down_location.x <= view->origin.x + view->size.x &&
-		        state->last_mouse_down_location.y <= view->origin.y + view->size.y;
+		        state->last_mouse_down_location.x >= view_state->origin.x &&
+		        state->last_mouse_down_location.y >= view_state->origin.y &&
+		        state->last_mouse_down_location.x <=
+		                view_state->origin.x + view_state->size.x &&
+		        state->last_mouse_down_location.y <=
+		                view_state->origin.y + view_state->size.y;
 
 		if (in_bounds)
 		{
@@ -515,8 +533,8 @@ SignalForView(View *view)
 		}
 	}
 
-	view->pressed = result.flags & SignalFlags_Pressed;
-	view->hovered = result.flags & SignalFlags_Hovered;
+	view_state->pressed = result.flags & SignalFlags_Pressed;
+	view_state->hovered = result.flags & SignalFlags_Hovered;
 	return result;
 }
 
@@ -544,7 +562,6 @@ Button(String8 string)
 	view->drop_shadow_blur = 4;
 	view->drop_shadow_offset.y = 2;
 	view->inner_shadow_color = v4(1, 1, 1, 0.2f);
-	view->inner_shadow_blur = 0;
 	view->inner_shadow_offset.y = 1;
 
 	Signal signal = SignalForView(view);
@@ -764,35 +781,37 @@ SliderF32(F32 *value, F32 minimum, F32 maximum, String8 string)
 }
 
 function Signal
-Scrollable(String8 string)
+Scrollable(String8 string, V2 *scroll_position)
 {
 	View *view = ViewFromString(string);
-	view->flags |= ViewFlags_Clip;
 	view->color = v4(1, 0, 0, 1);
 	view->size_minimum = v2(200, 200);
+	view->clip = 1;
 
 	Signal signal = SignalForView(view);
 	if (Scrolled(signal))
 	{
-		view->child_offset.x += signal.scroll_distance.x;
-		view->child_offset.y += signal.scroll_distance.y;
+		scroll_position->x += signal.scroll_distance.x;
+		scroll_position->y += signal.scroll_distance.y;
 	}
+
+	view->child_offset = *scroll_position;
 
 	return signal;
 }
 
 function void
-PruneUnusedViews(void)
+PruneUnusedViewStates(void)
 {
-	View *next = 0;
+	ViewState *next = 0;
 
-	for (View *view = state->first_view_all; view != 0; view = next)
+	for (ViewState *view_state = state->first_view_state; view_state != 0; view_state = next)
 	{
-		next = view->next_all;
+		next = view_state->hash_next;
 
-		if (view->last_touched_build_index < state->build_index)
+		if (view_state->last_touched_build_index < state->build_index)
 		{
-			ViewRelease(view);
+			ViewStateRelease(view_state);
 		}
 	}
 }
@@ -835,101 +854,110 @@ StepAnimation(F32 *x, F32 *dx, F32 x_target, B32 is_size)
 }
 
 function void
-LayoutView(View *view, V2 origin)
+LayoutViewState(ViewState *view_state, V2 origin)
 {
-	MemoryZeroStruct(&view->rasterized_line);
-	if (view->text_color.a > 0)
+	MemoryZeroStruct(&view_state->rasterized_line);
+	if (view_state->view.text_color.a > 0)
 	{
-		RasterizeLine(state->frame_arena, &view->rasterized_line, view->string,
-		        state->glyph_atlas, state->font);
+		RasterizeLine(state->frame_arena, &view_state->rasterized_line,
+		        view_state->view.string, state->glyph_atlas, state->font);
 	}
 
 	V2 start_position = origin;
 	V2 current_position = origin;
-	current_position.x += view->padding.x + view->child_offset.x;
-	current_position.y += view->padding.y + view->child_offset.y;
+	current_position.x += view_state->view.padding.x + view_state->view.child_offset.x;
+	current_position.y += view_state->view.padding.y + view_state->view.child_offset.y;
 
-	current_position.y += RoundF32(view->rasterized_line.bounds.y);
+	current_position.y += RoundF32(view_state->rasterized_line.bounds.y);
 
 	V2 content_size_max = {0};
-	content_size_max.x = RoundF32(view->rasterized_line.bounds.x);
-	content_size_max.y = RoundF32(view->rasterized_line.bounds.y);
+	content_size_max.x = RoundF32(view_state->rasterized_line.bounds.x);
+	content_size_max.y = RoundF32(view_state->rasterized_line.bounds.y);
 
-	for (View *child = view->first; child != 0; child = child->next)
+	for (ViewState *child = view_state->first; child != 0; child = child->next)
 	{
-		LayoutView(child, current_position);
+		LayoutViewState(child, current_position);
 		content_size_max.x = Max(content_size_max.x, child->size_target.x);
 		content_size_max.y = Max(content_size_max.y, child->size_target.y);
 
-		switch (view->child_layout_axis)
+		switch (view_state->view.child_layout_axis)
 		{
 			case Axis2_X:
 			{
-				current_position.x += child->size_target.x + view->child_gap;
+				current_position.x +=
+				        child->size_target.x + view_state->view.child_gap;
 			}
 			break;
 
 			case Axis2_Y:
 			{
-				current_position.y += child->size_target.y + view->child_gap;
+				current_position.y +=
+				        child->size_target.y + view_state->view.child_gap;
 			}
 			break;
 		}
 	}
 
-	current_position.y += view->padding.y;
+	current_position.y += view_state->view.padding.y;
 
 	// Update origin and size targets.
-	view->origin_target = origin;
-	switch (view->child_layout_axis)
+	view_state->origin_target = origin;
+	switch (view_state->view.child_layout_axis)
 	{
 		case Axis2_X:
 		{
-			view->size_target.x = current_position.x - start_position.x;
-			view->size_target.y = content_size_max.y + view->padding.y * 2;
+			view_state->size_target.x = current_position.x - start_position.x;
+			view_state->size_target.y =
+			        content_size_max.y + view_state->view.padding.y * 2;
 		}
 		break;
 
 		case Axis2_Y:
 		{
-			view->size_target.x = content_size_max.x + view->padding.x * 2;
-			view->size_target.y = current_position.y - start_position.y;
+			view_state->size_target.x =
+			        content_size_max.x + view_state->view.padding.x * 2;
+			view_state->size_target.y = current_position.y - start_position.y;
 		}
 		break;
 	}
-	view->size_target.x = Max(view->size_target.x, view->size_minimum.x);
-	view->size_target.y = Max(view->size_target.y, view->size_minimum.y);
+	view_state->size_target.x = Max(view_state->size_target.x, view_state->view.size_minimum.x);
+	view_state->size_target.y = Max(view_state->size_target.y, view_state->view.size_minimum.y);
 
 	// Step origin and size animations towards their targets.
-	if (view->flags & ViewFlags_FirstFrame)
+	if (view_state->is_first_frame)
 	{
-		view->origin = view->origin_target;
-		view->size = view->size_target;
+		view_state->origin = view_state->origin_target;
+		view_state->size = view_state->size_target;
 	}
 	else
 	{
-		StepAnimation(&view->origin.x, &view->origin_velocity.x, view->origin_target.x, 0);
-		StepAnimation(&view->origin.y, &view->origin_velocity.y, view->origin_target.y, 0);
-		StepAnimation(&view->size.x, &view->size_velocity.x, view->size_target.x, 1);
-		StepAnimation(&view->size.y, &view->size_velocity.y, view->size_target.y, 1);
+		StepAnimation(&view_state->origin.x, &view_state->origin_velocity.x,
+		        view_state->origin_target.x, 0);
+		StepAnimation(&view_state->origin.y, &view_state->origin_velocity.y,
+		        view_state->origin_target.y, 0);
+		StepAnimation(&view_state->size.x, &view_state->size_velocity.x,
+		        view_state->size_target.x, 1);
+		StepAnimation(&view_state->size.y, &view_state->size_velocity.y,
+		        view_state->size_target.y, 1);
 	}
 }
 
 function void
 LayoutUI(V2 viewport_size)
 {
-	state->root->size_minimum = viewport_size;
-	LayoutView(state->root, v2(0, 0));
+	state->root->view.size_minimum = viewport_size;
+	LayoutViewState(state->root, v2(0, 0));
 }
 
 function void
 StartBuild(void)
 {
-	state->root = ViewAlloc();
-	state->root->flags |= ViewFlags_FirstFrame;
-	state->root->color = v4(0.2f, 0.2f, 0.2f, 1);
-	state->root->padding = v2(20, 20);
-	state->root->child_gap = 10;
+	state->root = ViewStateAlloc();
+	state->root->is_first_frame = 1;
+	state->root->view.color = v4(0.2f, 0.2f, 0.2f, 1);
+	state->root->view.padding = v2(20, 20);
+	state->root->view.child_gap = 10;
+	state->root->view.child_layout_axis = Axis2_Y;
 	state->current = state->root;
 	state->build_index++;
 }
@@ -937,7 +965,7 @@ StartBuild(void)
 function void
 EndBuild(V2 viewport_size)
 {
-	PruneUnusedViews();
+	PruneUnusedViewStates();
 	LayoutUI(viewport_size);
 	state->first_event = 0;
 	state->last_event = 0;
@@ -995,7 +1023,8 @@ BuildUI(void)
 	RadioButton(&selection, 2, Str8Lit("Baz"));
 
 	MakeNextCurrent();
-	Scrollable(Str8Lit("scrollable"));
+	local_persist V2 scroll_position = {0};
+	Scrollable(Str8Lit("scrollable"), &scroll_position);
 	Button(Str8Lit("some button 1"));
 	Button(Str8Lit("some button 2"));
 	Button(Str8Lit("some button 3"));
@@ -1011,19 +1040,20 @@ BuildUI(void)
 }
 
 function void
-RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray *box_array)
+RenderViewState(
+        ViewState *view_state, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray *box_array)
 {
-	if (view->flags & ViewFlags_Clip)
+	if (view_state->view.clip)
 	{
 		V2 parent_clip_origin = clip_origin;
 		V2 parent_clip_size = clip_size;
-		clip_origin.x = Max(parent_clip_origin.x, view->origin.x);
-		clip_origin.y = Max(parent_clip_origin.y, view->origin.y);
+		clip_origin.x = Max(parent_clip_origin.x, view_state->origin.x);
+		clip_origin.y = Max(parent_clip_origin.y, view_state->origin.y);
 		clip_size.x = Min(parent_clip_origin.x + parent_clip_size.x,
-		                      view->origin.x + view->size.x) -
+		                      view_state->origin.x + view_state->size.x) -
 		              clip_origin.x;
 		clip_size.y = Min(parent_clip_origin.y + parent_clip_size.y,
-		                      view->origin.y + view->size.y) -
+		                      view_state->origin.y + view_state->size.y) -
 		              clip_origin.y;
 	}
 
@@ -1057,17 +1087,18 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 	chunk->clip_origin = clip_origin;
 	chunk->clip_size = clip_size;
 
-	V2 inside_border_origin = view->origin;
-	inside_border_origin.x += view->border_thickness;
-	inside_border_origin.y += view->border_thickness;
+	V2 inside_border_origin = view_state->origin;
+	inside_border_origin.x += view_state->view.border_thickness;
+	inside_border_origin.y += view_state->view.border_thickness;
 
-	V2 inside_border_size = view->size;
-	inside_border_size.x -= view->border_thickness * 2;
-	inside_border_size.y -= view->border_thickness * 2;
+	V2 inside_border_size = view_state->size;
+	inside_border_size.x -= view_state->view.border_thickness * 2;
+	inside_border_size.y -= view_state->view.border_thickness * 2;
 
-	F32 inside_border_corner_radius = view->corner_radius - view->border_thickness;
+	F32 inside_border_corner_radius =
+	        view_state->view.corner_radius - view_state->view.border_thickness;
 
-	if (view->color.a > 0)
+	if (view_state->view.color.a > 0)
 	{
 		Box *box = box_array->boxes + box_array->count;
 		box_array->count++;
@@ -1080,32 +1111,32 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		box->size = inside_border_size;
 		box->size.x *= scale_factor;
 		box->size.y *= scale_factor;
-		box->color = view->color;
+		box->color = view_state->view.color;
 		box->corner_radius = inside_border_corner_radius * scale_factor;
 	}
 
-	if (view->text_color.a > 0)
+	if (view_state->view.text_color.a > 0)
 	{
-		V2 text_origin = view->origin;
-		text_origin.x += view->padding.x;
-		text_origin.y += view->padding.y;
+		V2 text_origin = view_state->origin;
+		text_origin.x += view_state->view.padding.x;
+		text_origin.y += view_state->view.padding.y;
 		text_origin.x *= scale_factor;
 		text_origin.y *= scale_factor;
-		text_origin.y += RoundF32(
-		        (view->rasterized_line.bounds.y + (F32)CTFontGetCapHeight(state->font)) *
-		        scale_factor * 0.5f);
+		text_origin.y += RoundF32((view_state->rasterized_line.bounds.y +
+		                                  (F32)CTFontGetCapHeight(state->font)) *
+		                          scale_factor * 0.5f);
 
-		for (U64 glyph_index = 0; glyph_index < view->rasterized_line.glyph_count;
+		for (U64 glyph_index = 0; glyph_index < view_state->rasterized_line.glyph_count;
 		        glyph_index++)
 		{
-			GlyphAtlasSlot *slot = view->rasterized_line.slots[glyph_index];
+			GlyphAtlasSlot *slot = view_state->rasterized_line.slots[glyph_index];
 
 			Box *box = box_array->boxes + box_array->count;
 			box_array->count++;
 			chunk->count++;
 			Assert(box_array->count <= box_array->capacity);
 
-			box->origin = view->rasterized_line.positions[glyph_index];
+			box->origin = view_state->rasterized_line.positions[glyph_index];
 			box->origin.x += text_origin.x;
 			box->origin.y += text_origin.y;
 			box->texture_origin.x = slot->origin.x;
@@ -1114,13 +1145,13 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 			box->size.y = slot->size.y;
 			box->texture_size.x = slot->size.x;
 			box->texture_size.y = slot->size.y;
-			box->color = view->text_color;
+			box->color = view_state->view.text_color;
 		}
 	}
 
-	for (View *child = view->first; child != 0; child = child->next)
+	for (ViewState *child = view_state->first; child != 0; child = child->next)
 	{
-		if (child->drop_shadow_color.a > 0)
+		if (child->view.drop_shadow_color.a > 0)
 		{
 			Box *box = box_array->boxes + box_array->count;
 			box_array->count++;
@@ -1128,16 +1159,16 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 			Assert(box_array->count <= box_array->capacity);
 
 			box->origin = child->origin;
-			box->origin.x += child->drop_shadow_offset.x;
-			box->origin.y += child->drop_shadow_offset.y;
+			box->origin.x += child->view.drop_shadow_offset.x;
+			box->origin.y += child->view.drop_shadow_offset.y;
 			box->origin.x *= scale_factor;
 			box->origin.y *= scale_factor;
 			box->size = child->size;
 			box->size.x *= scale_factor;
 			box->size.y *= scale_factor;
-			box->color = child->drop_shadow_color;
-			box->corner_radius = child->corner_radius * scale_factor;
-			box->blur = child->drop_shadow_blur * scale_factor;
+			box->color = child->view.drop_shadow_color;
+			box->corner_radius = child->view.corner_radius * scale_factor;
+			box->blur = child->view.drop_shadow_blur * scale_factor;
 			box->cutout_origin = child->origin;
 			box->cutout_origin.x *= scale_factor;
 			box->cutout_origin.y *= scale_factor;
@@ -1147,12 +1178,12 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		}
 	}
 
-	for (View *child = view->first; child != 0; child = child->next)
+	for (ViewState *child = view_state->first; child != 0; child = child->next)
 	{
-		RenderView(child, clip_origin, clip_size, scale_factor, box_array);
+		RenderViewState(child, clip_origin, clip_size, scale_factor, box_array);
 	}
 
-	if (view->inner_shadow_color.a > 0)
+	if (view_state->view.inner_shadow_color.a > 0)
 	{
 		Box *box = box_array->boxes + box_array->count;
 		box_array->count++;
@@ -1160,16 +1191,16 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		Assert(box_array->count <= box_array->capacity);
 
 		box->origin = inside_border_origin;
-		box->origin.x += view->inner_shadow_offset.x;
-		box->origin.y += view->inner_shadow_offset.y;
+		box->origin.x += view_state->view.inner_shadow_offset.x;
+		box->origin.y += view_state->view.inner_shadow_offset.y;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
 		box->size = inside_border_size;
 		box->size.x *= scale_factor;
 		box->size.y *= scale_factor;
-		box->color = view->inner_shadow_color;
+		box->color = view_state->view.inner_shadow_color;
 		box->corner_radius = inside_border_corner_radius * scale_factor;
-		box->blur = view->inner_shadow_blur * scale_factor;
+		box->blur = view_state->view.inner_shadow_blur * scale_factor;
 		box->cutout_origin = inside_border_origin;
 		box->cutout_origin.x *= scale_factor;
 		box->cutout_origin.y *= scale_factor;
@@ -1179,29 +1210,29 @@ RenderView(View *view, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray 
 		box->invert = 1;
 	}
 
-	if (view->border_thickness > 0)
+	if (view_state->view.border_thickness > 0)
 	{
 		Box *box = box_array->boxes + box_array->count;
 		box_array->count++;
 		chunk->count++;
 		Assert(box_array->count <= box_array->capacity);
 
-		box->origin = view->origin;
+		box->origin = view_state->origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
-		box->size = view->size;
+		box->size = view_state->size;
 		box->size.x *= scale_factor;
 		box->size.y *= scale_factor;
-		box->color = view->border_color;
-		box->border_thickness = view->border_thickness * scale_factor;
-		box->corner_radius = view->corner_radius * scale_factor;
+		box->color = view_state->view.border_color;
+		box->border_thickness = view_state->view.border_thickness * scale_factor;
+		box->corner_radius = view_state->view.corner_radius * scale_factor;
 	}
 }
 
 function void
 RenderUI(V2 viewport_size, F32 scale_factor, BoxArray *box_array)
 {
-	RenderView(state->root, v2(0, 0), viewport_size, scale_factor, box_array);
+	RenderViewState(state->root, v2(0, 0), viewport_size, scale_factor, box_array);
 }
 
 @implementation MainView
