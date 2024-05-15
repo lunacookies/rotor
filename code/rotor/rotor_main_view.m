@@ -876,6 +876,24 @@ LayoutViewState(ViewState *view_state, V2 origin)
 
 	for (ViewState *child = view_state->first; child != 0; child = child->next)
 	{
+		if (child != view_state->first)
+		{
+			switch (view_state->view.child_layout_axis)
+			{
+				case Axis2_X:
+				{
+					current_position.x += view_state->view.child_gap;
+				}
+				break;
+
+				case Axis2_Y:
+				{
+					current_position.y += view_state->view.child_gap;
+				}
+				break;
+			}
+		}
+
 		LayoutViewState(child, current_position);
 		content_size_max.x = Max(content_size_max.x, child->size_target.x);
 		content_size_max.y = Max(content_size_max.y, child->size_target.y);
@@ -884,15 +902,13 @@ LayoutViewState(ViewState *view_state, V2 origin)
 		{
 			case Axis2_X:
 			{
-				current_position.x +=
-				        child->size_target.x + view_state->view.child_gap;
+				current_position.x += child->size_target.x;
 			}
 			break;
 
 			case Axis2_Y:
 			{
-				current_position.y +=
-				        child->size_target.y + view_state->view.child_gap;
+				current_position.y += child->size_target.y;
 			}
 			break;
 		}
