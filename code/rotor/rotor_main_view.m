@@ -100,6 +100,7 @@ Scrolled(Signal signal)
 function U64
 KeyFromString(String8 string, U64 seed)
 {
+	// DJB2 hash
 	U64 result = seed;
 	for (U64 i = 0; i < string.count; i++)
 	{
