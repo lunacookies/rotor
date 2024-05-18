@@ -39,23 +39,6 @@ struct Box
 	B32 invert;
 };
 
-struct RasterizerData
-{
-	V4 rasterizer_position_ndc [[position]];
-	V2 position;
-	V2 center;
-	V2 half_size;
-	V2 cutout_center;
-	V2 cutout_half_size;
-	V4 color;
-	V2 texture_coordinates;
-	B32 untextured;
-	F32 border_thickness;
-	F32 corner_radius;
-	F32 softness;
-	B32 invert;
-};
-
 constant global V2 corners[] = {
         {0, 1},
         {0, 0},
@@ -64,64 +47,6 @@ constant global V2 corners[] = {
         {1, 0},
         {0, 0},
 };
-
-vertex RasterizerData
-VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant Box *boxes,
-        constant V2 *texture_bounds, constant V2 *bounds)
-{
-	RasterizerData result = {0};
-
-	V2 corner = corners[vertex_id];
-	Box box = boxes[instance_id];
-
-	V2 box_p0_rounded = metal::floor(box.origin);
-	V2 box_p1_rounded = metal::ceil(box.origin + box.size);
-	V2 box_origin_rounded = box_p0_rounded;
-	V2 box_size_rounded = box_p1_rounded - box_p0_rounded;
-
-	box_origin_rounded -= 100;
-	box_size_rounded += 200;
-
-	V2 origin_rounding = box_origin_rounded - box.origin;
-	V2 size_rounding = box_size_rounded - box.size;
-
-	V2 position = box_origin_rounded + box_size_rounded * corner;
-	V2 position_ndc = (position / *bounds * 2 - 1) * V2(1, -1);
-
-	result.rasterizer_position_ndc = V4(position_ndc, 0, 1);
-	result.position = position;
-
-	// Don’t apply more softness than the size of the box itself.
-	F32 shortest_side = metal::min(box.size.x, box.size.y);
-	box.softness = metal::min(box.softness, shortest_side);
-
-	result.center = box.origin + box.size * 0.5;
-
-	// By default the entirety of the softness sits outside of the box,
-	// but we want half to sit within the box and the other half outside the box.
-	// Thus, we need to move each edge of the box inwards by 0.5 * softness.
-	// There are two edges in each dimension, so we subtract 1 * softness.
-	result.half_size = 0.5 * (box.size - box.softness);
-	result.half_size = metal::max(result.half_size, 0);
-
-	result.cutout_center = box.cutout_origin + box.cutout_size * 0.5;
-	result.cutout_half_size = 0.5 * box.cutout_size;
-
-	result.texture_coordinates =
-	        ((box.texture_origin + origin_rounding) / *texture_bounds) +
-	        ((box.texture_size + size_rounding) / *texture_bounds) * corner;
-
-	result.color = box.color;
-	result.color.rgb *= result.color.a;
-
-	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
-	result.border_thickness = box.border_thickness;
-	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
-	result.softness = box.softness;
-	result.invert = box.invert;
-
-	return result;
-}
 
 F32
 Rectangle(V2 sample_position, V2 center, V2 half_size, F32 corner_radius)
@@ -146,6 +71,97 @@ Rectangle(V2 sample_position, V2 center, V2 half_size, F32 corner_radius)
 	V2 distance_to_edges = metal::abs(sample_position) - half_size + corner_radius;
 	return metal::min(metal::max(distance_to_edges.x, distance_to_edges.y), 0.f) +
 	       metal::length(metal::max(distance_to_edges, 0)) - corner_radius;
+}
+
+struct RasterizerData
+{
+	V4 bounds_position_ndc [[position]];
+	V2 position;
+	V2 center;
+	V2 half_size;
+	V2 cutout_center;
+	V2 cutout_half_size;
+	V4 color;
+	V2 texture_coordinates;
+	B32 untextured;
+	F32 border_thickness;
+	F32 corner_radius;
+	F32 softness;
+	B32 invert;
+};
+
+vertex RasterizerData
+VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant Box *boxes,
+        constant V2 *texture_bounds, constant V2 *bounds)
+{
+	RasterizerData result = {0};
+
+	V2 corner = corners[vertex_id];
+	Box box = boxes[instance_id];
+
+	V2 bounds_p0_rounded = 0;
+	V2 bounds_p1_rounded = 0;
+	if (box.invert)
+	{
+		bounds_p0_rounded = box.cutout_origin;
+		bounds_p1_rounded = box.cutout_origin + box.cutout_size;
+	}
+	else
+	{
+		bounds_p0_rounded = box.origin - 0.5 * box.softness;
+		bounds_p1_rounded = box.origin + box.size + 0.5 * box.softness;
+
+		// Half the softness sits outside the box,
+		// so space out the primitive’s bounds to contain the softness within it.
+		bounds_p0_rounded -= 0.5 * box.softness;
+		bounds_p1_rounded += 0.5 * box.softness;
+	}
+	bounds_p0_rounded = metal::floor(bounds_p0_rounded);
+	bounds_p1_rounded = metal::ceil(bounds_p1_rounded);
+
+	V2 bounds_origin_rounded = bounds_p0_rounded;
+	V2 bounds_size_rounded = bounds_p1_rounded - bounds_p0_rounded;
+
+	V2 bounds_origin_rounding = bounds_origin_rounded - box.origin;
+	V2 bounds_size_rounding = bounds_size_rounded - box.size;
+
+	V2 bounds_position_ndc =
+	        ((bounds_origin_rounded + bounds_size_rounded * corner) / *bounds * 2 - 1) *
+	        V2(1, -1);
+	result.bounds_position_ndc = V4(bounds_position_ndc, 0, 1);
+
+	result.position = bounds_origin_rounded + bounds_size_rounded * corner;
+
+	// Don’t apply more softness than the size of the box itself.
+	F32 shortest_side = metal::min(box.size.x, box.size.y);
+	box.softness = metal::min(box.softness, shortest_side);
+
+	result.center = box.origin + box.size * 0.5;
+
+	// By default the entirety of the softness sits outside of the box,
+	// but we want half to sit within the box and the other half outside the box.
+	// Thus, we need to move each edge of the box inwards by 0.5 * softness.
+	// There are two edges in each dimension, so we subtract 1 * softness.
+	result.half_size = 0.5 * (box.size - box.softness);
+	result.half_size = metal::max(result.half_size, 0);
+
+	result.cutout_center = box.cutout_origin + box.cutout_size * 0.5;
+	result.cutout_half_size = 0.5 * box.cutout_size;
+
+	result.texture_coordinates =
+	        ((box.texture_origin + bounds_origin_rounding) / *texture_bounds) +
+	        ((box.texture_size + bounds_size_rounding) / *texture_bounds) * corner;
+
+	result.color = box.color;
+	result.color.rgb *= result.color.a;
+
+	result.untextured = box.texture_size.x == 0 && box.texture_size.y == 0;
+	result.border_thickness = box.border_thickness;
+	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
+	result.softness = box.softness;
+	result.invert = box.invert;
+
+	return result;
 }
 
 fragment V4
