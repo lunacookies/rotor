@@ -18,26 +18,143 @@ struct Box
 	B32 invert;
 };
 
-typedef struct BoxRenderChunk BoxRenderChunk;
-struct BoxRenderChunk
+typedef struct BlurBox BlurBox;
+struct BlurBox
 {
-	BoxRenderChunk *next;
+	V2 origin;
+	V2 size;
+	F32 corner_radius;
+	F32 blur_radius;
+};
+
+typedef struct RenderChunk RenderChunk;
+struct RenderChunk
+{
+	RenderChunk *next;
 	U64 start;
 	U64 count;
 	V2 clip_origin;
 	V2 clip_size;
 };
 
-typedef struct BoxArray BoxArray;
-struct BoxArray
+typedef struct RenderPass RenderPass;
+struct RenderPass
+{
+	RenderPass *next;
+	RenderChunk *first_render_chunk;
+	RenderChunk *last_render_chunk;
+	B32 is_blur;
+};
+
+typedef struct Render Render;
+struct Render
 {
 	Box *boxes;
-	U64 count;
-	U64 capacity;
+	BlurBox *blur_boxes;
+	U64 box_count;
+	U64 box_capacity;
+	U64 blur_box_count;
+	U64 blur_box_capacity;
 
-	BoxRenderChunk *first_chunk;
-	BoxRenderChunk *last_chunk;
+	RenderPass *first_render_pass;
+	RenderPass *last_render_pass;
 };
+
+function RenderPass *
+MatchingRenderPass(Arena *arena, Render *render, B32 is_blur)
+{
+	RenderPass *new_render_pass = 0;
+
+	if (render->first_render_pass == 0)
+	{
+		Assert(render->last_render_pass == 0);
+		new_render_pass = PushStruct(arena, RenderPass);
+		render->first_render_pass = new_render_pass;
+	}
+	else
+	{
+		if (render->last_render_pass->is_blur == is_blur)
+		{
+			return render->last_render_pass;
+		}
+		new_render_pass = PushStruct(arena, RenderPass);
+		render->last_render_pass->next = new_render_pass;
+	}
+
+	render->last_render_pass = new_render_pass;
+	new_render_pass->is_blur = is_blur;
+	return new_render_pass;
+}
+
+function RenderChunk *
+MatchingRenderChunk(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, B32 is_blur)
+{
+	RenderPass *render_pass = MatchingRenderPass(arena, render, is_blur);
+
+	RenderChunk *new_render_chunk = 0;
+
+	if (render_pass->first_render_chunk == 0)
+	{
+		Assert(render_pass->last_render_chunk == 0);
+		new_render_chunk = PushStruct(arena, RenderChunk);
+		render_pass->first_render_chunk = new_render_chunk;
+		render_pass->last_render_chunk = new_render_chunk;
+	}
+	else
+	{
+		V2 current_clip_origin = render_pass->last_render_chunk->clip_origin;
+		V2 current_clip_size = render_pass->last_render_chunk->clip_size;
+
+		B32 clip_origin_matches = current_clip_origin.x == clip_origin.x &&
+		                          current_clip_origin.y == clip_origin.y;
+		B32 clip_size_matches =
+		        current_clip_size.x == clip_size.x && current_clip_size.y == clip_size.y;
+
+		if (clip_origin_matches && clip_size_matches)
+		{
+			return render_pass->last_render_chunk;
+		}
+
+		new_render_chunk = PushStruct(arena, RenderChunk);
+		render_pass->last_render_chunk->next = new_render_chunk;
+		render_pass->last_render_chunk = new_render_chunk;
+	}
+
+	if (is_blur)
+	{
+		new_render_chunk->start = render->blur_box_count;
+	}
+	else
+	{
+		new_render_chunk->start = render->box_count;
+	}
+
+	new_render_chunk->clip_origin = clip_origin;
+	new_render_chunk->clip_size = clip_size;
+	return new_render_chunk;
+}
+
+function Box *
+AddBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
+{
+	Assert(render->box_count < render->box_capacity);
+	RenderChunk *render_chunk = MatchingRenderChunk(arena, render, clip_origin, clip_size, 0);
+	Box *box = render->boxes + render->box_count;
+	render->box_count++;
+	render_chunk->count++;
+	return box;
+}
+
+function BlurBox *
+AddBlurBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
+{
+	Assert(render->box_count < render->box_capacity);
+	RenderChunk *render_chunk = MatchingRenderChunk(arena, render, clip_origin, clip_size, 1);
+	BlurBox *blur_box = render->blur_boxes + render->blur_box_count;
+	render->blur_box_count++;
+	render_chunk->count++;
+	return blur_box;
+}
 
 typedef struct RasterizedLine RasterizedLine;
 struct RasterizedLine
@@ -1057,7 +1174,7 @@ BuildUI(void)
 
 function void
 RenderViewState(
-        ViewState *view_state, V2 clip_origin, V2 clip_size, F32 scale_factor, BoxArray *box_array)
+        ViewState *view_state, V2 clip_origin, V2 clip_size, F32 scale_factor, Render *render)
 {
 	if (view_state->view.clip)
 	{
@@ -1073,36 +1190,6 @@ RenderViewState(
 		              clip_origin.y;
 	}
 
-	BoxRenderChunk *chunk = 0;
-
-	if (box_array->first_chunk == 0)
-	{
-		Assert(box_array->last_chunk == 0);
-		chunk = PushStruct(state->frame_arena, BoxRenderChunk);
-		box_array->first_chunk = chunk;
-		box_array->last_chunk = box_array->first_chunk;
-	}
-	else
-	{
-		if (box_array->last_chunk->clip_origin.x == clip_origin.x &&
-		        box_array->last_chunk->clip_origin.y == clip_origin.y &&
-		        box_array->last_chunk->clip_size.x == clip_size.x &&
-		        box_array->last_chunk->clip_size.y == clip_size.y)
-		{
-			chunk = box_array->last_chunk;
-		}
-		else
-		{
-			chunk = PushStruct(state->frame_arena, BoxRenderChunk);
-			chunk->start = box_array->count;
-			box_array->last_chunk->next = chunk;
-			box_array->last_chunk = chunk;
-		}
-	}
-
-	chunk->clip_origin = clip_origin;
-	chunk->clip_size = clip_size;
-
 	V2 inside_border_origin = view_state->origin;
 	inside_border_origin.x += view_state->view.border_thickness;
 	inside_border_origin.y += view_state->view.border_thickness;
@@ -1116,11 +1203,7 @@ RenderViewState(
 
 	if (view_state->view.color.a > 0)
 	{
-		Box *box = box_array->boxes + box_array->count;
-		box_array->count++;
-		chunk->count++;
-		Assert(box_array->count <= box_array->capacity);
-
+		Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
 		box->origin = inside_border_origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
@@ -1147,11 +1230,7 @@ RenderViewState(
 		{
 			GlyphAtlasSlot *slot = view_state->rasterized_line.slots[glyph_index];
 
-			Box *box = box_array->boxes + box_array->count;
-			box_array->count++;
-			chunk->count++;
-			Assert(box_array->count <= box_array->capacity);
-
+			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
 			box->origin = view_state->rasterized_line.positions[glyph_index];
 			box->origin.x += text_origin.x;
 			box->origin.y += text_origin.y;
@@ -1169,11 +1248,7 @@ RenderViewState(
 	{
 		if (child->view.drop_shadow_color.a > 0)
 		{
-			Box *box = box_array->boxes + box_array->count;
-			box_array->count++;
-			chunk->count++;
-			Assert(box_array->count <= box_array->capacity);
-
+			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
 			box->origin = child->origin;
 			box->origin.x += child->view.drop_shadow_offset.x;
 			box->origin.y += child->view.drop_shadow_offset.y;
@@ -1196,16 +1271,12 @@ RenderViewState(
 
 	for (ViewState *child = view_state->first; child != 0; child = child->next)
 	{
-		RenderViewState(child, clip_origin, clip_size, scale_factor, box_array);
+		RenderViewState(child, clip_origin, clip_size, scale_factor, render);
 	}
 
 	if (view_state->view.inner_shadow_color.a > 0)
 	{
-		Box *box = box_array->boxes + box_array->count;
-		box_array->count++;
-		chunk->count++;
-		Assert(box_array->count <= box_array->capacity);
-
+		Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
 		box->origin = inside_border_origin;
 		box->origin.x += view_state->view.inner_shadow_offset.x;
 		box->origin.y += view_state->view.inner_shadow_offset.y;
@@ -1228,11 +1299,7 @@ RenderViewState(
 
 	if (view_state->view.border_thickness > 0)
 	{
-		Box *box = box_array->boxes + box_array->count;
-		box_array->count++;
-		chunk->count++;
-		Assert(box_array->count <= box_array->capacity);
-
+		Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
 		box->origin = view_state->origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
@@ -1246,9 +1313,9 @@ RenderViewState(
 }
 
 function void
-RenderUI(V2 viewport_size, F32 scale_factor, BoxArray *box_array)
+RenderUI(V2 viewport_size, F32 scale_factor, Render *render)
 {
-	RenderViewState(state->root, v2(0, 0), viewport_size, scale_factor, box_array);
+	RenderViewState(state->root, v2(0, 0), viewport_size, scale_factor, render);
 }
 
 __attribute((constructor)) function void
@@ -1374,13 +1441,13 @@ V3 *game_colors;
 
 - (void)displayLayer:(CALayer *)layer
 {
-	BoxArray box_array = {0};
-	box_array.capacity = 1024;
+	Render render = {0};
+	render.box_capacity = 1024;
 
-	id<MTLBuffer> box_array_buffer =
-	        [metal_layer.device newBufferWithLength:box_array.capacity * sizeof(Box)
+	id<MTLBuffer> box_buffer =
+	        [metal_layer.device newBufferWithLength:render.box_capacity * sizeof(Box)
 	                                        options:MTLResourceStorageModeShared];
-	box_array.boxes = box_array_buffer.contents;
+	render.boxes = box_buffer.contents;
 
 	V2 viewport_size = {0};
 	viewport_size.x = (F32)self.bounds.size.width;
@@ -1391,7 +1458,7 @@ V3 *game_colors;
 	StartBuild();
 	BuildUI();
 	EndBuild(viewport_size);
-	RenderUI(viewport_size, scale_factor, &box_array);
+	RenderUI(viewport_size, scale_factor, &render);
 
 	for (U64 i = 0; i < game_count; i++)
 	{
@@ -1419,82 +1486,109 @@ V3 *game_colors;
 		}
 	}
 
-	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
-
 	id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
+	id<CAMetalDrawable> drawable = [metal_layer nextDrawable];
+	id<MTLTexture> drawable_texture = drawable.texture;
 
-	MTLRenderPassDescriptor *descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-	descriptor.colorAttachments[0].texture = drawable.texture;
-	descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-	descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-	descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
-
-	id<MTLRenderCommandEncoder> encoder =
-	        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
-
-	[encoder setRenderPipelineState:game_pipeline_state];
-
-	[encoder setVertexBytes:game_positions length:game_count * sizeof(V2) atIndex:0];
-	[encoder setVertexBytes:game_sizes length:game_count * sizeof(F32) atIndex:1];
-	[encoder setVertexBytes:game_colors length:game_count * sizeof(V3) atIndex:2];
-	[encoder setVertexBytes:&viewport_size length:sizeof(viewport_size) atIndex:3];
-	[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-	            vertexStart:0
-	            vertexCount:6
-	          instanceCount:game_count];
-
-	[encoder setRenderPipelineState:pipeline_state];
-
-	V2 glyph_atlas_size = {0};
-	glyph_atlas_size.x = (F32)glyph_atlas.size.x;
-	glyph_atlas_size.y = (F32)glyph_atlas.size.y;
-	[encoder setVertexBytes:&glyph_atlas_size length:sizeof(glyph_atlas_size) atIndex:1];
-
-	V2 viewport_size_pixels = viewport_size;
-	viewport_size_pixels.x *= scale_factor;
-	viewport_size_pixels.y *= scale_factor;
-	[encoder setVertexBytes:&viewport_size_pixels
-	                 length:sizeof(viewport_size_pixels)
-	                atIndex:2];
-
-	[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
-
-	for (BoxRenderChunk *chunk = box_array.first_chunk; chunk != 0; chunk = chunk->next)
 	{
-		[encoder setVertexBuffer:box_array_buffer
-		                  offset:chunk->start * sizeof(Box)
-		                 atIndex:0];
+		MTLRenderPassDescriptor *descriptor =
+		        [MTLRenderPassDescriptor renderPassDescriptor];
+		descriptor.colorAttachments[0].texture = drawable_texture;
+		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+		descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+		descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.5, 0.5, 1);
 
-		V2 scissor_rect_p0 = chunk->clip_origin;
-		scissor_rect_p0.x = Clamp(scissor_rect_p0.x, 0, viewport_size.x);
-		scissor_rect_p0.y = Clamp(scissor_rect_p0.y, 0, viewport_size.y);
+		id<MTLRenderCommandEncoder> encoder =
+		        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
 
-		V2 scissor_rect_p1 = chunk->clip_origin;
-		scissor_rect_p1.x += chunk->clip_size.x;
-		scissor_rect_p1.y += chunk->clip_size.y;
-		scissor_rect_p1.x = Clamp(scissor_rect_p1.x, 0, viewport_size.x);
-		scissor_rect_p1.y = Clamp(scissor_rect_p1.y, 0, viewport_size.y);
+		[encoder setRenderPipelineState:game_pipeline_state];
 
-		V2 scissor_rect_origin = scissor_rect_p0;
-		V2 scissor_rect_size = {0};
-		scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
-		scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
-
-		MTLScissorRect scissor_rect = {0};
-		scissor_rect.x = (U64)(scissor_rect_origin.x * scale_factor);
-		scissor_rect.y = (U64)(scissor_rect_origin.y * scale_factor);
-		scissor_rect.width = (U64)(scissor_rect_size.x * scale_factor);
-		scissor_rect.height = (U64)(scissor_rect_size.y * scale_factor);
-
-		[encoder setScissorRect:scissor_rect];
-
+		[encoder setVertexBytes:game_positions length:game_count * sizeof(V2) atIndex:0];
+		[encoder setVertexBytes:game_sizes length:game_count * sizeof(F32) atIndex:1];
+		[encoder setVertexBytes:game_colors length:game_count * sizeof(V3) atIndex:2];
+		[encoder setVertexBytes:&viewport_size length:sizeof(viewport_size) atIndex:3];
 		[encoder drawPrimitives:MTLPrimitiveTypeTriangle
 		            vertexStart:0
 		            vertexCount:6
-		          instanceCount:chunk->count];
+		          instanceCount:game_count];
+
+		[encoder endEncoding];
 	}
 
-	[encoder endEncoding];
+	for (RenderPass *render_pass = render.first_render_pass; render_pass != 0;
+	        render_pass = render_pass->next)
+	{
+		MTLRenderPassDescriptor *descriptor =
+		        [MTLRenderPassDescriptor renderPassDescriptor];
+		descriptor.colorAttachments[0].texture = drawable_texture;
+		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+
+		id<MTLRenderCommandEncoder> encoder =
+		        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
+
+		[encoder setRenderPipelineState:pipeline_state];
+
+		V2 glyph_atlas_size = {0};
+		glyph_atlas_size.x = (F32)glyph_atlas.size.x;
+		glyph_atlas_size.y = (F32)glyph_atlas.size.y;
+		[encoder setVertexBytes:&glyph_atlas_size
+		                 length:sizeof(glyph_atlas_size)
+		                atIndex:1];
+
+		V2 viewport_size_pixels = viewport_size;
+		viewport_size_pixels.x *= scale_factor;
+		viewport_size_pixels.y *= scale_factor;
+		[encoder setVertexBytes:&viewport_size_pixels
+		                 length:sizeof(viewport_size_pixels)
+		                atIndex:2];
+
+		[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
+
+		for (RenderChunk *render_chunk = render_pass->first_render_chunk; render_chunk != 0;
+		        render_chunk = render_chunk->next)
+		{
+			U64 offset = render_chunk->start * sizeof(Box);
+			if (render_chunk == render_pass->first_render_chunk)
+			{
+				[encoder setVertexBuffer:box_buffer offset:offset atIndex:0];
+			}
+			else
+			{
+				[encoder setVertexBufferOffset:offset atIndex:0];
+			}
+
+			V2 scissor_rect_p0 = render_chunk->clip_origin;
+			scissor_rect_p0.x = Clamp(scissor_rect_p0.x, 0, viewport_size.x);
+			scissor_rect_p0.y = Clamp(scissor_rect_p0.y, 0, viewport_size.y);
+
+			V2 scissor_rect_p1 = render_chunk->clip_origin;
+			scissor_rect_p1.x += render_chunk->clip_size.x;
+			scissor_rect_p1.y += render_chunk->clip_size.y;
+			scissor_rect_p1.x = Clamp(scissor_rect_p1.x, 0, viewport_size.x);
+			scissor_rect_p1.y = Clamp(scissor_rect_p1.y, 0, viewport_size.y);
+
+			V2 scissor_rect_origin = scissor_rect_p0;
+			V2 scissor_rect_size = {0};
+			scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
+			scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
+
+			MTLScissorRect scissor_rect = {0};
+			scissor_rect.x = (U64)(scissor_rect_origin.x * scale_factor);
+			scissor_rect.y = (U64)(scissor_rect_origin.y * scale_factor);
+			scissor_rect.width = (U64)(scissor_rect_size.x * scale_factor);
+			scissor_rect.height = (U64)(scissor_rect_size.y * scale_factor);
+
+			[encoder setScissorRect:scissor_rect];
+
+			[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+			            vertexStart:0
+			            vertexCount:6
+			          instanceCount:render_chunk->count];
+		}
+
+		[encoder endEncoding];
+	}
 
 	[command_buffer presentDrawable:drawable];
 	[command_buffer commit];
