@@ -148,7 +148,7 @@ AddBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
 function BlurBox *
 AddBlurBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
 {
-	Assert(render->box_count < render->box_capacity);
+	Assert(render->blur_box_count < render->blur_box_capacity);
 	RenderChunk *render_chunk = MatchingRenderChunk(arena, render, clip_origin, clip_size, 1);
 	BlurBox *blur_box = render->blur_boxes + render->blur_box_count;
 	render->blur_box_count++;
@@ -252,6 +252,8 @@ struct View
 	V4 inner_shadow_color;
 	F32 inner_shadow_softness;
 	V2 inner_shadow_offset;
+
+	F32 blur_radius;
 
 	B32 clip;
 };
@@ -902,7 +904,7 @@ function Signal
 Scrollable(String8 string, V2 *scroll_position)
 {
 	View *view = ViewFromString(string);
-	view->color = v4(1, 0, 0, 1);
+	view->color = v4(0.1f, 0.1f, 0.1f, 0.5f);
 	view->size_minimum = v2(200, 200);
 	view->clip = 1;
 
@@ -1091,6 +1093,7 @@ StartBuild(void)
 	state->root->view.padding = v2(20, 20);
 	state->root->view.child_gap = 10;
 	state->root->view.child_layout_axis = Axis2_Y;
+	state->root->view.blur_radius = 10;
 	state->current = state->root;
 	state->build_index++;
 }
@@ -1200,6 +1203,19 @@ RenderViewState(
 
 	F32 inside_border_corner_radius =
 	        view_state->view.corner_radius - view_state->view.border_thickness;
+
+	if (view_state->view.blur_radius > 0)
+	{
+		BlurBox *box = AddBlurBox(state->frame_arena, render, clip_origin, clip_size);
+		box->origin = inside_border_origin;
+		box->origin.x *= scale_factor;
+		box->origin.y *= scale_factor;
+		box->size = inside_border_size;
+		box->size.x *= scale_factor;
+		box->size.y *= scale_factor;
+		box->corner_radius = inside_border_corner_radius * scale_factor;
+		box->blur_radius = view_state->view.blur_radius * scale_factor;
+	}
 
 	if (view_state->view.color.a > 0)
 	{
@@ -1337,6 +1353,8 @@ Arena *frame_arena;
 CAMetalLayer *metal_layer;
 id<MTLCommandQueue> command_queue;
 id<MTLRenderPipelineState> pipeline_state;
+id<MTLRenderPipelineState> blur_pipeline_state;
+id<MTLTexture> offscreen_texture;
 
 CVDisplayLinkRef display_link;
 
@@ -1362,6 +1380,7 @@ V3 *game_colors;
 	metal_layer.delegate = self;
 	metal_layer.device = MTLCreateSystemDefaultDevice();
 	metal_layer.pixelFormat = MTLPixelFormatRGBA16Float;
+	metal_layer.framebufferOnly = NO;
 	command_queue = [metal_layer.device newCommandQueue];
 
 	metal_layer.colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -1395,6 +1414,18 @@ V3 *game_colors;
 	                                                                    error:&error];
 
 	if (pipeline_state == nil)
+	{
+		[[NSAlert alertWithError:error] runModal];
+		abort();
+	}
+
+	descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexShader"];
+	descriptor.fragmentFunction = [library newFunctionWithName:@"BlurFragmentShader"];
+
+	blur_pipeline_state = [metal_layer.device newRenderPipelineStateWithDescriptor:descriptor
+	                                                                         error:&error];
+
+	if (blur_pipeline_state == nil)
 	{
 		[[NSAlert alertWithError:error] runModal];
 		abort();
@@ -1443,11 +1474,16 @@ V3 *game_colors;
 {
 	Render render = {0};
 	render.box_capacity = 1024;
+	render.blur_box_capacity = 128;
 
 	id<MTLBuffer> box_buffer =
 	        [metal_layer.device newBufferWithLength:render.box_capacity * sizeof(Box)
 	                                        options:MTLResourceStorageModeShared];
+	id<MTLBuffer> blur_box_buffer =
+	        [metal_layer.device newBufferWithLength:render.blur_box_capacity * sizeof(BlurBox)
+	                                        options:MTLResourceStorageModeShared];
 	render.boxes = box_buffer.contents;
+	render.blur_boxes = blur_box_buffer.contents;
 
 	V2 viewport_size = {0};
 	viewport_size.x = (F32)self.bounds.size.width;
@@ -1515,79 +1551,187 @@ V3 *game_colors;
 		[encoder endEncoding];
 	}
 
+	V2 viewport_size_pixels = viewport_size;
+	viewport_size_pixels.x *= scale_factor;
+	viewport_size_pixels.y *= scale_factor;
+
 	for (RenderPass *render_pass = render.first_render_pass; render_pass != 0;
 	        render_pass = render_pass->next)
 	{
-		MTLRenderPassDescriptor *descriptor =
-		        [MTLRenderPassDescriptor renderPassDescriptor];
-		descriptor.colorAttachments[0].texture = drawable_texture;
-		descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-		descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
-
-		id<MTLRenderCommandEncoder> encoder =
-		        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
-
-		[encoder setRenderPipelineState:pipeline_state];
-
-		V2 glyph_atlas_size = {0};
-		glyph_atlas_size.x = (F32)glyph_atlas.size.x;
-		glyph_atlas_size.y = (F32)glyph_atlas.size.y;
-		[encoder setVertexBytes:&glyph_atlas_size
-		                 length:sizeof(glyph_atlas_size)
-		                atIndex:1];
-
-		V2 viewport_size_pixels = viewport_size;
-		viewport_size_pixels.x *= scale_factor;
-		viewport_size_pixels.y *= scale_factor;
-		[encoder setVertexBytes:&viewport_size_pixels
-		                 length:sizeof(viewport_size_pixels)
-		                atIndex:2];
-
-		[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
-
-		for (RenderChunk *render_chunk = render_pass->first_render_chunk; render_chunk != 0;
-		        render_chunk = render_chunk->next)
+		if (render_pass->is_blur)
 		{
-			U64 offset = render_chunk->start * sizeof(Box);
-			if (render_chunk == render_pass->first_render_chunk)
+			id<MTLBlitCommandEncoder> blit_encoder = [command_buffer
+			        blitCommandEncoderWithDescriptor:[MTLBlitPassDescriptor
+			                                                 blitPassDescriptor]];
+			[blit_encoder copyFromTexture:drawable_texture toTexture:offscreen_texture];
+			[blit_encoder endEncoding];
+
+			for (B32 is_vertical = 0; is_vertical <= 1; is_vertical++)
 			{
-				[encoder setVertexBuffer:box_buffer offset:offset atIndex:0];
+				MTLRenderPassDescriptor *descriptor =
+				        [MTLRenderPassDescriptor renderPassDescriptor];
+
+				if (is_vertical)
+				{
+					descriptor.colorAttachments[0].texture = drawable_texture;
+				}
+				else
+				{
+					descriptor.colorAttachments[0].texture = offscreen_texture;
+				}
+
+				descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+				descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+
+				id<MTLRenderCommandEncoder> encoder = [command_buffer
+				        renderCommandEncoderWithDescriptor:descriptor];
+
+				[encoder setRenderPipelineState:blur_pipeline_state];
+
+				[encoder setVertexBytes:&viewport_size_pixels
+				                 length:sizeof(viewport_size_pixels)
+				                atIndex:1];
+
+				[encoder setVertexBytes:&is_vertical
+				                 length:sizeof(is_vertical)
+				                atIndex:2];
+
+				if (is_vertical)
+				{
+					[encoder setFragmentTexture:offscreen_texture atIndex:0];
+				}
+				else
+				{
+					[encoder setFragmentTexture:drawable_texture atIndex:0];
+				}
+
+				for (RenderChunk *render_chunk = render_pass->first_render_chunk;
+				        render_chunk != 0; render_chunk = render_chunk->next)
+				{
+					U64 offset = render_chunk->start * sizeof(BlurBox);
+					if (render_chunk == render_pass->first_render_chunk)
+					{
+						[encoder setVertexBuffer:blur_box_buffer
+						                  offset:offset
+						                 atIndex:0];
+					}
+					else
+					{
+						[encoder setVertexBufferOffset:offset atIndex:0];
+					}
+
+					V2 scissor_rect_p0 = render_chunk->clip_origin;
+					scissor_rect_p0.x =
+					        Clamp(scissor_rect_p0.x, 0, viewport_size.x);
+					scissor_rect_p0.y =
+					        Clamp(scissor_rect_p0.y, 0, viewport_size.y);
+
+					V2 scissor_rect_p1 = render_chunk->clip_origin;
+					scissor_rect_p1.x += render_chunk->clip_size.x;
+					scissor_rect_p1.y += render_chunk->clip_size.y;
+					scissor_rect_p1.x =
+					        Clamp(scissor_rect_p1.x, 0, viewport_size.x);
+					scissor_rect_p1.y =
+					        Clamp(scissor_rect_p1.y, 0, viewport_size.y);
+
+					V2 scissor_rect_origin = scissor_rect_p0;
+					V2 scissor_rect_size = {0};
+					scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
+					scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
+
+					MTLScissorRect scissor_rect = {0};
+					scissor_rect.x =
+					        (U64)(scissor_rect_origin.x * scale_factor);
+					scissor_rect.y =
+					        (U64)(scissor_rect_origin.y * scale_factor);
+					scissor_rect.width =
+					        (U64)(scissor_rect_size.x * scale_factor);
+					scissor_rect.height =
+					        (U64)(scissor_rect_size.y * scale_factor);
+
+					[encoder setScissorRect:scissor_rect];
+
+					[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+					            vertexStart:0
+					            vertexCount:6
+					          instanceCount:render_chunk->count];
+				}
+
+				[encoder endEncoding];
 			}
-			else
-			{
-				[encoder setVertexBufferOffset:offset atIndex:0];
-			}
-
-			V2 scissor_rect_p0 = render_chunk->clip_origin;
-			scissor_rect_p0.x = Clamp(scissor_rect_p0.x, 0, viewport_size.x);
-			scissor_rect_p0.y = Clamp(scissor_rect_p0.y, 0, viewport_size.y);
-
-			V2 scissor_rect_p1 = render_chunk->clip_origin;
-			scissor_rect_p1.x += render_chunk->clip_size.x;
-			scissor_rect_p1.y += render_chunk->clip_size.y;
-			scissor_rect_p1.x = Clamp(scissor_rect_p1.x, 0, viewport_size.x);
-			scissor_rect_p1.y = Clamp(scissor_rect_p1.y, 0, viewport_size.y);
-
-			V2 scissor_rect_origin = scissor_rect_p0;
-			V2 scissor_rect_size = {0};
-			scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
-			scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
-
-			MTLScissorRect scissor_rect = {0};
-			scissor_rect.x = (U64)(scissor_rect_origin.x * scale_factor);
-			scissor_rect.y = (U64)(scissor_rect_origin.y * scale_factor);
-			scissor_rect.width = (U64)(scissor_rect_size.x * scale_factor);
-			scissor_rect.height = (U64)(scissor_rect_size.y * scale_factor);
-
-			[encoder setScissorRect:scissor_rect];
-
-			[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-			            vertexStart:0
-			            vertexCount:6
-			          instanceCount:render_chunk->count];
 		}
+		else
+		{
+			MTLRenderPassDescriptor *descriptor =
+			        [MTLRenderPassDescriptor renderPassDescriptor];
+			descriptor.colorAttachments[0].texture = drawable_texture;
+			descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+			descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
 
-		[encoder endEncoding];
+			id<MTLRenderCommandEncoder> encoder =
+			        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
+
+			[encoder setRenderPipelineState:pipeline_state];
+
+			[encoder setVertexBytes:&viewport_size_pixels
+			                 length:sizeof(viewport_size_pixels)
+			                atIndex:1];
+
+			V2 glyph_atlas_size = {0};
+			glyph_atlas_size.x = (F32)glyph_atlas.size.x;
+			glyph_atlas_size.y = (F32)glyph_atlas.size.y;
+			[encoder setVertexBytes:&glyph_atlas_size
+			                 length:sizeof(glyph_atlas_size)
+			                atIndex:2];
+
+			[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
+
+			for (RenderChunk *render_chunk = render_pass->first_render_chunk;
+			        render_chunk != 0; render_chunk = render_chunk->next)
+			{
+				U64 offset = render_chunk->start * sizeof(Box);
+				if (render_chunk == render_pass->first_render_chunk)
+				{
+					[encoder setVertexBuffer:box_buffer
+					                  offset:offset
+					                 atIndex:0];
+				}
+				else
+				{
+					[encoder setVertexBufferOffset:offset atIndex:0];
+				}
+
+				V2 scissor_rect_p0 = render_chunk->clip_origin;
+				scissor_rect_p0.x = Clamp(scissor_rect_p0.x, 0, viewport_size.x);
+				scissor_rect_p0.y = Clamp(scissor_rect_p0.y, 0, viewport_size.y);
+
+				V2 scissor_rect_p1 = render_chunk->clip_origin;
+				scissor_rect_p1.x += render_chunk->clip_size.x;
+				scissor_rect_p1.y += render_chunk->clip_size.y;
+				scissor_rect_p1.x = Clamp(scissor_rect_p1.x, 0, viewport_size.x);
+				scissor_rect_p1.y = Clamp(scissor_rect_p1.y, 0, viewport_size.y);
+
+				V2 scissor_rect_origin = scissor_rect_p0;
+				V2 scissor_rect_size = {0};
+				scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
+				scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
+
+				MTLScissorRect scissor_rect = {0};
+				scissor_rect.x = (U64)(scissor_rect_origin.x * scale_factor);
+				scissor_rect.y = (U64)(scissor_rect_origin.y * scale_factor);
+				scissor_rect.width = (U64)(scissor_rect_size.x * scale_factor);
+				scissor_rect.height = (U64)(scissor_rect_size.y * scale_factor);
+
+				[encoder setScissorRect:scissor_rect];
+
+				[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+				            vertexStart:0
+				            vertexCount:6
+				          instanceCount:render_chunk->count];
+			}
+
+			[encoder endEncoding];
+		}
 	}
 
 	[command_buffer presentDrawable:drawable];
@@ -1606,6 +1750,8 @@ V3 *game_colors;
 	StateInit(frame_arena, &glyph_atlas);
 	metal_layer.contentsScale = self.window.backingScaleFactor;
 	CVDisplayLinkStart(display_link);
+
+	[self updateOffscreenTexture];
 }
 
 - (void)setFrameSize:(NSSize)size
@@ -1621,6 +1767,24 @@ V3 *game_colors;
 	}
 
 	metal_layer.drawableSize = size;
+
+	[self updateOffscreenTexture];
+}
+
+- (void)updateOffscreenTexture
+{
+	F32 scale_factor = (F32)self.window.backingScaleFactor;
+	U64 width = (U64)(self.frame.size.width * scale_factor);
+	U64 height = (U64)(self.frame.size.height * scale_factor);
+
+	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
+	descriptor.pixelFormat = metal_layer.pixelFormat;
+	descriptor.width = width;
+	descriptor.height = height;
+	descriptor.storageMode = MTLStorageModePrivate;
+	descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+
+	offscreen_texture = [metal_layer.device newTextureWithDescriptor:descriptor];
 }
 
 function CVReturn

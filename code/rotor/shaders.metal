@@ -39,6 +39,14 @@ struct Box
 	B32 invert;
 };
 
+struct BlurBox
+{
+	V2 origin;
+	V2 size;
+	F32 corner_radius;
+	F32 blur_radius;
+};
+
 constant global V2 corners[] = {
         {0, 1},
         {0, 0},
@@ -92,7 +100,7 @@ struct RasterizerData
 
 vertex RasterizerData
 VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant Box *boxes,
-        constant V2 *texture_bounds, constant V2 *bounds)
+        constant V2 *bounds, constant V2 *texture_bounds)
 {
 	RasterizerData result = {0};
 
@@ -209,6 +217,116 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 	}
 
 	return data.color * factor;
+}
+
+struct BlurRasterizerData
+{
+	V4 bounds_position_ndc [[position]];
+	V2 position;
+	V2 center;
+	V2 half_size;
+	F32 corner_radius;
+	V2 texture_coordinates;
+	V2 step_size;
+	F32 blur_radius;
+	V2 bounds_p0_uv;
+	V2 bounds_p1_uv;
+};
+
+constant global U32 sample_count = 64;
+
+vertex BlurRasterizerData
+BlurVertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]],
+        constant BlurBox *boxes, constant V2 *bounds, constant B32 *is_vertical)
+{
+	BlurRasterizerData result = {0};
+
+	V2 corner = corners[vertex_id];
+	BlurBox box = boxes[instance_id];
+
+	V2 bounds_p0_rounded = metal::floor(box.origin);
+	V2 bounds_p1_rounded = metal::ceil(box.origin + box.size);
+	V2 bounds_origin_rounded = bounds_p0_rounded;
+	V2 bounds_size_rounded = bounds_p1_rounded - bounds_p0_rounded;
+	V2 bounds_position_ndc =
+	        ((bounds_origin_rounded + bounds_size_rounded * corner) / *bounds * 2 - 1) *
+	        V2(1, -1);
+	result.bounds_position_ndc = V4(bounds_position_ndc, 0, 1);
+	result.position = bounds_origin_rounded + bounds_size_rounded * corner;
+
+	F32 shortest_side = metal::min(box.size.x, box.size.y);
+
+	result.center = box.origin + box.size * 0.5;
+	result.half_size = 0.5 * box.size;
+	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
+
+	result.texture_coordinates =
+	        (bounds_origin_rounded + bounds_size_rounded * corner) / *bounds;
+
+	if (*is_vertical)
+	{
+		result.step_size = V2(0, 1 / bounds->y);
+	}
+	else
+	{
+		result.step_size = V2(1 / bounds->x, 0);
+	}
+	result.step_size *= box.blur_radius / sample_count;
+
+	result.blur_radius = box.blur_radius;
+
+	result.bounds_p0_uv = bounds_p0_rounded / *bounds;
+	result.bounds_p1_uv = bounds_p1_rounded / *bounds;
+
+	return result;
+}
+
+void
+GaussianWeights(thread F32 *weights, F32 sigma)
+{
+	for (U32 i = 0; i < sample_count; i++)
+	{
+		F32 x = (F32)i - (F32)(sample_count / 2);
+		weights[i] = metal::exp(-(x * x) / (2 * sigma * sigma));
+	}
+}
+
+fragment V4
+BlurFragmentShader(BlurRasterizerData data [[stage_in]], metal::texture2d<F32> behind)
+{
+	F32 distance = Rectangle(data.position, data.center, data.half_size, data.corner_radius);
+	F32 factor = 1 - metal::saturate(distance);
+
+	metal::sampler behind_sampler(metal::mag_filter::linear, metal::min_filter::linear,
+	        metal::address::mirrored_repeat);
+
+	F32 weights[sample_count] = {0};
+	GaussianWeights(weights, data.blur_radius);
+
+	V4 samples = 0;
+	F32 weights_sum = 0;
+
+	for (U32 i = 0; i < sample_count; i++)
+	{
+		V2 offset = ((F32)i - (F32)(sample_count / 2)) * data.step_size;
+		V2 sample_position = data.texture_coordinates + offset;
+
+		if (sample_position.x < data.bounds_p0_uv.x ||
+		        sample_position.x > data.bounds_p1_uv.x ||
+		        sample_position.y < data.bounds_p0_uv.y ||
+		        sample_position.y > data.bounds_p1_uv.y)
+		{
+			continue;
+		}
+
+		F32 weight = weights[i];
+		weights_sum += weight;
+		samples += weight * behind.sample(behind_sampler, sample_position);
+	}
+
+	samples /= weights_sum;
+
+	return samples * factor;
 }
 
 struct GameRasterizerData
