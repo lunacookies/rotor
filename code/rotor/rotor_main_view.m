@@ -1250,6 +1250,17 @@ RenderUI(V2 viewport_size, F32 scale_factor, BoxArray *box_array)
 	RenderViewState(state->root, v2(0, 0), viewport_size, scale_factor, box_array);
 }
 
+__attribute((constructor)) function void
+MainViewInit(void)
+{
+	setenv("MTL_HUD_ENABLED", "1", 1);
+	setenv("MTL_SHADER_VALIDATION", "1", 1);
+	setenv("MTL_DEBUG_LAYER", "1", 1);
+	setenv("MTL_DEBUG_LAYER_WARNING_MODE", "assert", 1);
+	setenv("MTL_DEBUG_LAYER_VALIDATE_LOAD_ACTIONS", "1", 1);
+	setenv("MTL_DEBUG_LAYER_VALIDATE_STORE_ACTIONS", "1", 1);
+}
+
 @implementation MainView
 
 Arena *permanent_arena;
@@ -1273,13 +1284,6 @@ V3 *game_colors;
 - (instancetype)initWithFrame:(NSRect)frame
 {
 	self = [super initWithFrame:frame];
-
-	setenv("MTL_HUD_ENABLED", "1", 1);
-	setenv("MTL_SHADER_VALIDATION", "1", 1);
-	setenv("MTL_DEBUG_LAYER", "1", 1);
-	setenv("MTL_DEBUG_LAYER_WARNING_MODE", "assert", 1);
-	setenv("MTL_DEBUG_LAYER_VALIDATE_LOAD_ACTIONS", "1", 1);
-	setenv("MTL_DEBUG_LAYER_VALIDATE_STORE_ACTIONS", "1", 1);
 
 	self.wantsLayer = YES;
 	self.layer = [CAMetalLayer layer];
