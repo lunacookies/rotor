@@ -253,6 +253,9 @@ struct View
 	F32 inner_shadow_softness;
 	V2 inner_shadow_offset;
 
+	V4 text_shadow_color;
+	V2 text_shadow_offset;
+
 	F32 blur_radius;
 
 	B32 clip;
@@ -683,6 +686,8 @@ Button(String8 string)
 	view->drop_shadow_offset.y = 2;
 	view->inner_shadow_color = v4(1, 1, 1, 0.2f);
 	view->inner_shadow_offset.y = 1;
+	view->text_shadow_color = v4(0, 0, 0, 1);
+	view->text_shadow_offset = v2(0, -0.5f);
 
 	Signal signal = SignalForView(view);
 
@@ -1240,6 +1245,36 @@ RenderViewState(
 		text_origin.y += RoundF32((view_state->rasterized_line.bounds.y +
 		                                  (F32)CTFontGetCapHeight(state->font)) *
 		                          scale_factor * 0.5f);
+
+		if (view_state->view.text_shadow_color.a > 0)
+		{
+			V2 text_shadow_origin = text_origin;
+			text_shadow_origin.x +=
+			        view_state->view.text_shadow_offset.x * scale_factor;
+			text_shadow_origin.y +=
+			        view_state->view.text_shadow_offset.y * scale_factor;
+
+			for (U64 glyph_index = 0;
+			        glyph_index < view_state->rasterized_line.glyph_count;
+			        glyph_index++)
+			{
+				GlyphAtlasSlot *slot =
+				        view_state->rasterized_line.slots[glyph_index];
+
+				Box *box =
+				        AddBox(state->frame_arena, render, clip_origin, clip_size);
+				box->origin = view_state->rasterized_line.positions[glyph_index];
+				box->origin.x += text_shadow_origin.x;
+				box->origin.y += text_shadow_origin.y;
+				box->texture_origin.x = slot->origin.x;
+				box->texture_origin.y = slot->origin.y;
+				box->size.x = slot->size.x;
+				box->size.y = slot->size.y;
+				box->texture_size.x = slot->size.x;
+				box->texture_size.y = slot->size.y;
+				box->color = view_state->view.text_shadow_color;
+			}
+		}
 
 		for (U64 glyph_index = 0; glyph_index < view_state->rasterized_line.glyph_count;
 		        glyph_index++)
