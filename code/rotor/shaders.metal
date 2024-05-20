@@ -36,6 +36,9 @@ struct Box
 	F32 softness;
 	V2 cutout_origin;
 	V2 cutout_size;
+	V2 clip_origin;
+	V2 clip_size;
+	F32 clip_corner_radius;
 	B32 invert;
 };
 
@@ -43,6 +46,9 @@ struct EffectsBox
 {
 	V2 origin;
 	V2 size;
+	V2 clip_origin;
+	V2 clip_size;
+	F32 clip_corner_radius;
 	F32 corner_radius;
 	F32 blur_radius;
 };
@@ -89,6 +95,9 @@ struct RasterizerData
 	V2 half_size;
 	V2 cutout_center;
 	V2 cutout_half_size;
+	V2 clip_center;
+	V2 clip_half_size;
+	F32 clip_corner_radius;
 	V4 color;
 	V2 texture_coordinates;
 	B32 untextured;
@@ -156,6 +165,10 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.cutout_center = box.cutout_origin + box.cutout_size * 0.5;
 	result.cutout_half_size = 0.5 * box.cutout_size;
 
+	result.clip_center = box.clip_origin + box.clip_size * 0.5;
+	result.clip_half_size = 0.5 * box.clip_size;
+	result.clip_corner_radius = box.clip_corner_radius;
+
 	result.texture_coordinates =
 	        ((box.texture_origin + bounds_origin_rounding) / *texture_bounds) +
 	        ((box.texture_size + bounds_size_rounding) / *texture_bounds) * corner;
@@ -201,6 +214,10 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 		}
 	}
 
+	distance = Rectangle(
+	        data.position, data.clip_center, data.clip_half_size, data.clip_corner_radius);
+	factor *= 1 - metal::saturate(distance);
+
 	if (data.border_thickness != 0)
 	{
 		distance = Rectangle(data.position, data.center,
@@ -226,6 +243,9 @@ struct EffectsRasterizerData
 	V2 center;
 	V2 half_size;
 	F32 corner_radius;
+	V2 clip_center;
+	V2 clip_half_size;
+	F32 clip_corner_radius;
 	V2 texture_coordinates;
 	V2 step_size;
 	F32 blur_radius;
@@ -259,6 +279,10 @@ EffectsVertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]]
 	result.center = box.origin + box.size * 0.5;
 	result.half_size = 0.5 * box.size;
 	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
+
+	result.clip_center = box.clip_origin + box.clip_size * 0.5;
+	result.clip_half_size = 0.5 * box.clip_size;
+	result.clip_corner_radius = box.clip_corner_radius;
 
 	result.texture_coordinates =
 	        (bounds_origin_rounded + bounds_size_rounded * corner) / *bounds;
@@ -296,6 +320,10 @@ EffectsFragmentShader(EffectsRasterizerData data [[stage_in]], metal::texture2d<
 {
 	F32 distance = Rectangle(data.position, data.center, data.half_size, data.corner_radius);
 	F32 factor = 1 - metal::saturate(distance);
+
+	distance = Rectangle(
+	        data.position, data.clip_center, data.clip_half_size, data.clip_corner_radius);
+	factor *= 1 - metal::saturate(distance);
 
 	metal::sampler behind_sampler(metal::mag_filter::linear, metal::min_filter::linear,
 	        metal::address::mirrored_repeat);

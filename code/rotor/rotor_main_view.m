@@ -15,6 +15,9 @@ struct Box
 	F32 softness;
 	V2 cutout_origin;
 	V2 cutout_size;
+	V2 clip_origin;
+	V2 clip_size;
+	F32 clip_corner_radius;
 	B32 invert;
 };
 
@@ -23,26 +26,19 @@ struct EffectsBox
 {
 	V2 origin;
 	V2 size;
-	F32 corner_radius;
-	F32 blur_radius;
-};
-
-typedef struct RenderChunk RenderChunk;
-struct RenderChunk
-{
-	RenderChunk *next;
-	U64 start;
-	U64 count;
 	V2 clip_origin;
 	V2 clip_size;
+	F32 clip_corner_radius;
+	F32 corner_radius;
+	F32 blur_radius;
 };
 
 typedef struct RenderPass RenderPass;
 struct RenderPass
 {
 	RenderPass *next;
-	RenderChunk *first_render_chunk;
-	RenderChunk *last_render_chunk;
+	U64 start;
+	U64 count;
 	B32 is_effects;
 };
 
@@ -58,6 +54,8 @@ struct Render
 
 	RenderPass *first_render_pass;
 	RenderPass *last_render_pass;
+
+	F32 scale_factor;
 };
 
 function RenderPass *
@@ -82,77 +80,63 @@ MatchingRenderPass(Arena *arena, Render *render, B32 is_effects)
 	}
 
 	render->last_render_pass = new_render_pass;
+
 	new_render_pass->is_effects = is_effects;
+	if (is_effects)
+	{
+		new_render_pass->start = render->effects_box_count;
+	}
+	else
+	{
+		new_render_pass->start = render->box_count;
+	}
+
 	return new_render_pass;
 }
 
-function RenderChunk *
-MatchingRenderChunk(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, B32 is_effects)
-{
-	RenderPass *render_pass = MatchingRenderPass(arena, render, is_effects);
-
-	RenderChunk *new_render_chunk = 0;
-
-	if (render_pass->first_render_chunk == 0)
-	{
-		Assert(render_pass->last_render_chunk == 0);
-		new_render_chunk = PushStruct(arena, RenderChunk);
-		render_pass->first_render_chunk = new_render_chunk;
-		render_pass->last_render_chunk = new_render_chunk;
-	}
-	else
-	{
-		V2 current_clip_origin = render_pass->last_render_chunk->clip_origin;
-		V2 current_clip_size = render_pass->last_render_chunk->clip_size;
-
-		B32 clip_origin_matches = current_clip_origin.x == clip_origin.x &&
-		                          current_clip_origin.y == clip_origin.y;
-		B32 clip_size_matches =
-		        current_clip_size.x == clip_size.x && current_clip_size.y == clip_size.y;
-
-		if (clip_origin_matches && clip_size_matches)
-		{
-			return render_pass->last_render_chunk;
-		}
-
-		new_render_chunk = PushStruct(arena, RenderChunk);
-		render_pass->last_render_chunk->next = new_render_chunk;
-		render_pass->last_render_chunk = new_render_chunk;
-	}
-
-	if (is_effects)
-	{
-		new_render_chunk->start = render->effects_box_count;
-	}
-	else
-	{
-		new_render_chunk->start = render->box_count;
-	}
-
-	new_render_chunk->clip_origin = clip_origin;
-	new_render_chunk->clip_size = clip_size;
-	return new_render_chunk;
-}
-
 function Box *
-AddBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
+AddBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, F32 clip_corner_radius)
 {
 	Assert(render->box_count < render->box_capacity);
-	RenderChunk *render_chunk = MatchingRenderChunk(arena, render, clip_origin, clip_size, 0);
+	RenderPass *render_pass = MatchingRenderPass(arena, render, 0);
 	Box *box = render->boxes + render->box_count;
 	render->box_count++;
-	render_chunk->count++;
+	render_pass->count++;
+
+	box->clip_origin = clip_origin;
+	box->clip_origin.x *= render->scale_factor;
+	box->clip_origin.y *= render->scale_factor;
+
+	box->clip_size = clip_size;
+	box->clip_size.x *= render->scale_factor;
+	box->clip_size.y *= render->scale_factor;
+
+	box->clip_corner_radius = clip_corner_radius;
+	box->clip_corner_radius *= render->scale_factor;
+
 	return box;
 }
 
 function EffectsBox *
-AddEffectsBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
+AddEffectsBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, F32 clip_corner_radius)
 {
 	Assert(render->effects_box_count < render->effects_box_capacity);
-	RenderChunk *render_chunk = MatchingRenderChunk(arena, render, clip_origin, clip_size, 1);
+	RenderPass *render_pass = MatchingRenderPass(arena, render, 1);
 	EffectsBox *effects_box = render->effects_boxes + render->effects_box_count;
 	render->effects_box_count++;
-	render_chunk->count++;
+	render_pass->count++;
+
+	effects_box->clip_origin = clip_origin;
+	effects_box->clip_origin.x *= render->scale_factor;
+	effects_box->clip_origin.y *= render->scale_factor;
+
+	effects_box->clip_size = clip_size;
+	effects_box->clip_size.x *= render->scale_factor;
+	effects_box->clip_size.y *= render->scale_factor;
+
+	effects_box->clip_corner_radius = clip_corner_radius;
+	effects_box->clip_corner_radius *= render->scale_factor;
+
 	return effects_box;
 }
 
@@ -1181,8 +1165,8 @@ BuildUI(void)
 }
 
 function void
-RenderViewState(
-        ViewState *view_state, V2 clip_origin, V2 clip_size, F32 scale_factor, Render *render)
+RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_corner_radius,
+        F32 scale_factor, Render *render)
 {
 	if (view_state->view.clip)
 	{
@@ -1196,6 +1180,7 @@ RenderViewState(
 		clip_size.y = Min(parent_clip_origin.y + parent_clip_size.y,
 		                      view_state->origin.y + view_state->size.y) -
 		              clip_origin.y;
+		clip_corner_radius = Max(clip_corner_radius, view_state->view.corner_radius);
 	}
 
 	V2 inside_border_origin = view_state->origin;
@@ -1211,7 +1196,8 @@ RenderViewState(
 
 	if (view_state->view.blur_radius > 0)
 	{
-		EffectsBox *box = AddEffectsBox(state->frame_arena, render, clip_origin, clip_size);
+		EffectsBox *box = AddEffectsBox(
+		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
 		box->origin = inside_border_origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
@@ -1224,7 +1210,8 @@ RenderViewState(
 
 	if (view_state->view.color.a > 0)
 	{
-		Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
+		Box *box = AddBox(
+		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
 		box->origin = inside_border_origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
@@ -1261,8 +1248,8 @@ RenderViewState(
 				GlyphAtlasSlot *slot =
 				        view_state->rasterized_line.slots[glyph_index];
 
-				Box *box =
-				        AddBox(state->frame_arena, render, clip_origin, clip_size);
+				Box *box = AddBox(state->frame_arena, render, clip_origin,
+				        clip_size, clip_corner_radius);
 				box->origin = view_state->rasterized_line.positions[glyph_index];
 				box->origin.x += text_shadow_origin.x;
 				box->origin.y += text_shadow_origin.y;
@@ -1281,7 +1268,8 @@ RenderViewState(
 		{
 			GlyphAtlasSlot *slot = view_state->rasterized_line.slots[glyph_index];
 
-			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
+			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size,
+			        clip_corner_radius);
 			box->origin = view_state->rasterized_line.positions[glyph_index];
 			box->origin.x += text_origin.x;
 			box->origin.y += text_origin.y;
@@ -1299,7 +1287,8 @@ RenderViewState(
 	{
 		if (child->view.drop_shadow_color.a > 0)
 		{
-			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
+			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size,
+			        clip_corner_radius);
 			box->origin = child->origin;
 			box->origin.x += child->view.drop_shadow_offset.x;
 			box->origin.y += child->view.drop_shadow_offset.y;
@@ -1322,12 +1311,14 @@ RenderViewState(
 
 	for (ViewState *child = view_state->first; child != 0; child = child->next)
 	{
-		RenderViewState(child, clip_origin, clip_size, scale_factor, render);
+		RenderViewState(
+		        child, clip_origin, clip_size, clip_corner_radius, scale_factor, render);
 	}
 
 	if (view_state->view.inner_shadow_color.a > 0)
 	{
-		Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
+		Box *box = AddBox(
+		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
 		box->origin = inside_border_origin;
 		box->origin.x += view_state->view.inner_shadow_offset.x;
 		box->origin.y += view_state->view.inner_shadow_offset.y;
@@ -1350,7 +1341,8 @@ RenderViewState(
 
 	if (view_state->view.border_thickness > 0)
 	{
-		Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size);
+		Box *box = AddBox(
+		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
 		box->origin = view_state->origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
@@ -1364,9 +1356,10 @@ RenderViewState(
 }
 
 function void
-RenderUI(V2 viewport_size, F32 scale_factor, Render *render)
+RenderUI(F32 scale_factor, Render *render)
 {
-	RenderViewState(state->root, v2(0, 0), viewport_size, scale_factor, render);
+	RenderViewState(state->root, v2(-INFINITY, -INFINITY), v2(INFINITY, INFINITY), 0,
+	        scale_factor, render);
 }
 
 __attribute((constructor)) function void
@@ -1507,7 +1500,10 @@ V3 *game_colors;
 
 - (void)displayLayer:(CALayer *)layer
 {
+	F32 scale_factor = (F32)self.window.backingScaleFactor;
+
 	Render render = {0};
+	render.scale_factor = scale_factor;
 	render.box_capacity = 1024;
 	render.effects_box_capacity = 128;
 
@@ -1524,12 +1520,10 @@ V3 *game_colors;
 	viewport_size.x = (F32)self.bounds.size.width;
 	viewport_size.y = (F32)self.bounds.size.height;
 
-	F32 scale_factor = (F32)self.window.backingScaleFactor;
-
 	StartBuild();
 	BuildUI();
 	EndBuild(viewport_size);
-	RenderUI(viewport_size, scale_factor, &render);
+	RenderUI(scale_factor, &render);
 
 	for (U64 i = 0; i < game_count; i++)
 	{
@@ -1640,57 +1634,14 @@ V3 *game_colors;
 					[encoder setFragmentTexture:drawable_texture atIndex:0];
 				}
 
-				for (RenderChunk *render_chunk = render_pass->first_render_chunk;
-				        render_chunk != 0; render_chunk = render_chunk->next)
-				{
-					U64 offset = render_chunk->start * sizeof(EffectsBox);
-					if (render_chunk == render_pass->first_render_chunk)
-					{
-						[encoder setVertexBuffer:effects_box_buffer
-						                  offset:offset
-						                 atIndex:0];
-					}
-					else
-					{
-						[encoder setVertexBufferOffset:offset atIndex:0];
-					}
+				[encoder setVertexBuffer:effects_box_buffer
+				                  offset:render_pass->start * sizeof(EffectsBox)
+				                 atIndex:0];
 
-					V2 scissor_rect_p0 = render_chunk->clip_origin;
-					scissor_rect_p0.x =
-					        Clamp(scissor_rect_p0.x, 0, viewport_size.x);
-					scissor_rect_p0.y =
-					        Clamp(scissor_rect_p0.y, 0, viewport_size.y);
-
-					V2 scissor_rect_p1 = render_chunk->clip_origin;
-					scissor_rect_p1.x += render_chunk->clip_size.x;
-					scissor_rect_p1.y += render_chunk->clip_size.y;
-					scissor_rect_p1.x =
-					        Clamp(scissor_rect_p1.x, 0, viewport_size.x);
-					scissor_rect_p1.y =
-					        Clamp(scissor_rect_p1.y, 0, viewport_size.y);
-
-					V2 scissor_rect_origin = scissor_rect_p0;
-					V2 scissor_rect_size = {0};
-					scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
-					scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
-
-					MTLScissorRect scissor_rect = {0};
-					scissor_rect.x =
-					        (U64)(scissor_rect_origin.x * scale_factor);
-					scissor_rect.y =
-					        (U64)(scissor_rect_origin.y * scale_factor);
-					scissor_rect.width =
-					        (U64)(scissor_rect_size.x * scale_factor);
-					scissor_rect.height =
-					        (U64)(scissor_rect_size.y * scale_factor);
-
-					[encoder setScissorRect:scissor_rect];
-
-					[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-					            vertexStart:0
-					            vertexCount:6
-					          instanceCount:render_chunk->count];
-				}
+				[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+				            vertexStart:0
+				            vertexCount:6
+				          instanceCount:render_pass->count];
 
 				[encoder endEncoding];
 			}
@@ -1721,49 +1672,14 @@ V3 *game_colors;
 
 			[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 
-			for (RenderChunk *render_chunk = render_pass->first_render_chunk;
-			        render_chunk != 0; render_chunk = render_chunk->next)
-			{
-				U64 offset = render_chunk->start * sizeof(Box);
-				if (render_chunk == render_pass->first_render_chunk)
-				{
-					[encoder setVertexBuffer:box_buffer
-					                  offset:offset
-					                 atIndex:0];
-				}
-				else
-				{
-					[encoder setVertexBufferOffset:offset atIndex:0];
-				}
+			[encoder setVertexBuffer:box_buffer
+			                  offset:render_pass->start * sizeof(Box)
+			                 atIndex:0];
 
-				V2 scissor_rect_p0 = render_chunk->clip_origin;
-				scissor_rect_p0.x = Clamp(scissor_rect_p0.x, 0, viewport_size.x);
-				scissor_rect_p0.y = Clamp(scissor_rect_p0.y, 0, viewport_size.y);
-
-				V2 scissor_rect_p1 = render_chunk->clip_origin;
-				scissor_rect_p1.x += render_chunk->clip_size.x;
-				scissor_rect_p1.y += render_chunk->clip_size.y;
-				scissor_rect_p1.x = Clamp(scissor_rect_p1.x, 0, viewport_size.x);
-				scissor_rect_p1.y = Clamp(scissor_rect_p1.y, 0, viewport_size.y);
-
-				V2 scissor_rect_origin = scissor_rect_p0;
-				V2 scissor_rect_size = {0};
-				scissor_rect_size.x = scissor_rect_p1.x - scissor_rect_p0.x;
-				scissor_rect_size.y = scissor_rect_p1.y - scissor_rect_p0.y;
-
-				MTLScissorRect scissor_rect = {0};
-				scissor_rect.x = (U64)(scissor_rect_origin.x * scale_factor);
-				scissor_rect.y = (U64)(scissor_rect_origin.y * scale_factor);
-				scissor_rect.width = (U64)(scissor_rect_size.x * scale_factor);
-				scissor_rect.height = (U64)(scissor_rect_size.y * scale_factor);
-
-				[encoder setScissorRect:scissor_rect];
-
-				[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-				            vertexStart:0
-				            vertexCount:6
-				          instanceCount:render_chunk->count];
-			}
+			[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+			            vertexStart:0
+			            vertexCount:6
+			          instanceCount:render_pass->count];
 
 			[encoder endEncoding];
 		}
