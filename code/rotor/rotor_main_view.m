@@ -18,8 +18,8 @@ struct Box
 	B32 invert;
 };
 
-typedef struct BlurBox BlurBox;
-struct BlurBox
+typedef struct EffectsBox EffectsBox;
+struct EffectsBox
 {
 	V2 origin;
 	V2 size;
@@ -43,25 +43,25 @@ struct RenderPass
 	RenderPass *next;
 	RenderChunk *first_render_chunk;
 	RenderChunk *last_render_chunk;
-	B32 is_blur;
+	B32 is_effects;
 };
 
 typedef struct Render Render;
 struct Render
 {
 	Box *boxes;
-	BlurBox *blur_boxes;
+	EffectsBox *effects_boxes;
 	U64 box_count;
 	U64 box_capacity;
-	U64 blur_box_count;
-	U64 blur_box_capacity;
+	U64 effects_box_count;
+	U64 effects_box_capacity;
 
 	RenderPass *first_render_pass;
 	RenderPass *last_render_pass;
 };
 
 function RenderPass *
-MatchingRenderPass(Arena *arena, Render *render, B32 is_blur)
+MatchingRenderPass(Arena *arena, Render *render, B32 is_effects)
 {
 	RenderPass *new_render_pass = 0;
 
@@ -73,7 +73,7 @@ MatchingRenderPass(Arena *arena, Render *render, B32 is_blur)
 	}
 	else
 	{
-		if (render->last_render_pass->is_blur == is_blur)
+		if (render->last_render_pass->is_effects == is_effects)
 		{
 			return render->last_render_pass;
 		}
@@ -82,14 +82,14 @@ MatchingRenderPass(Arena *arena, Render *render, B32 is_blur)
 	}
 
 	render->last_render_pass = new_render_pass;
-	new_render_pass->is_blur = is_blur;
+	new_render_pass->is_effects = is_effects;
 	return new_render_pass;
 }
 
 function RenderChunk *
-MatchingRenderChunk(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, B32 is_blur)
+MatchingRenderChunk(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, B32 is_effects)
 {
-	RenderPass *render_pass = MatchingRenderPass(arena, render, is_blur);
+	RenderPass *render_pass = MatchingRenderPass(arena, render, is_effects);
 
 	RenderChunk *new_render_chunk = 0;
 
@@ -120,9 +120,9 @@ MatchingRenderChunk(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, 
 		render_pass->last_render_chunk = new_render_chunk;
 	}
 
-	if (is_blur)
+	if (is_effects)
 	{
-		new_render_chunk->start = render->blur_box_count;
+		new_render_chunk->start = render->effects_box_count;
 	}
 	else
 	{
@@ -145,15 +145,15 @@ AddBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
 	return box;
 }
 
-function BlurBox *
-AddBlurBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
+function EffectsBox *
+AddEffectsBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size)
 {
-	Assert(render->blur_box_count < render->blur_box_capacity);
+	Assert(render->effects_box_count < render->effects_box_capacity);
 	RenderChunk *render_chunk = MatchingRenderChunk(arena, render, clip_origin, clip_size, 1);
-	BlurBox *blur_box = render->blur_boxes + render->blur_box_count;
-	render->blur_box_count++;
+	EffectsBox *effects_box = render->effects_boxes + render->effects_box_count;
+	render->effects_box_count++;
 	render_chunk->count++;
-	return blur_box;
+	return effects_box;
 }
 
 typedef struct RasterizedLine RasterizedLine;
@@ -1211,7 +1211,7 @@ RenderViewState(
 
 	if (view_state->view.blur_radius > 0)
 	{
-		BlurBox *box = AddBlurBox(state->frame_arena, render, clip_origin, clip_size);
+		EffectsBox *box = AddEffectsBox(state->frame_arena, render, clip_origin, clip_size);
 		box->origin = inside_border_origin;
 		box->origin.x *= scale_factor;
 		box->origin.y *= scale_factor;
@@ -1388,7 +1388,7 @@ Arena *frame_arena;
 CAMetalLayer *metal_layer;
 id<MTLCommandQueue> command_queue;
 id<MTLRenderPipelineState> pipeline_state;
-id<MTLRenderPipelineState> blur_pipeline_state;
+id<MTLRenderPipelineState> effects_pipeline_state;
 id<MTLTexture> offscreen_texture;
 
 CVDisplayLinkRef display_link;
@@ -1454,13 +1454,13 @@ V3 *game_colors;
 		abort();
 	}
 
-	descriptor.vertexFunction = [library newFunctionWithName:@"BlurVertexShader"];
-	descriptor.fragmentFunction = [library newFunctionWithName:@"BlurFragmentShader"];
+	descriptor.vertexFunction = [library newFunctionWithName:@"EffectsVertexShader"];
+	descriptor.fragmentFunction = [library newFunctionWithName:@"EffectsFragmentShader"];
 
-	blur_pipeline_state = [metal_layer.device newRenderPipelineStateWithDescriptor:descriptor
-	                                                                         error:&error];
+	effects_pipeline_state = [metal_layer.device newRenderPipelineStateWithDescriptor:descriptor
+	                                                                            error:&error];
 
-	if (blur_pipeline_state == nil)
+	if (effects_pipeline_state == nil)
 	{
 		[[NSAlert alertWithError:error] runModal];
 		abort();
@@ -1509,16 +1509,16 @@ V3 *game_colors;
 {
 	Render render = {0};
 	render.box_capacity = 1024;
-	render.blur_box_capacity = 128;
+	render.effects_box_capacity = 128;
 
 	id<MTLBuffer> box_buffer =
 	        [metal_layer.device newBufferWithLength:render.box_capacity * sizeof(Box)
 	                                        options:MTLResourceStorageModeShared];
-	id<MTLBuffer> blur_box_buffer =
-	        [metal_layer.device newBufferWithLength:render.blur_box_capacity * sizeof(BlurBox)
-	                                        options:MTLResourceStorageModeShared];
+	id<MTLBuffer> effects_box_buffer = [metal_layer.device
+	        newBufferWithLength:render.effects_box_capacity * sizeof(EffectsBox)
+	                    options:MTLResourceStorageModeShared];
 	render.boxes = box_buffer.contents;
-	render.blur_boxes = blur_box_buffer.contents;
+	render.effects_boxes = effects_box_buffer.contents;
 
 	V2 viewport_size = {0};
 	viewport_size.x = (F32)self.bounds.size.width;
@@ -1593,7 +1593,7 @@ V3 *game_colors;
 	for (RenderPass *render_pass = render.first_render_pass; render_pass != 0;
 	        render_pass = render_pass->next)
 	{
-		if (render_pass->is_blur)
+		if (render_pass->is_effects)
 		{
 			id<MTLBlitCommandEncoder> blit_encoder = [command_buffer
 			        blitCommandEncoderWithDescriptor:[MTLBlitPassDescriptor
@@ -1621,7 +1621,7 @@ V3 *game_colors;
 				id<MTLRenderCommandEncoder> encoder = [command_buffer
 				        renderCommandEncoderWithDescriptor:descriptor];
 
-				[encoder setRenderPipelineState:blur_pipeline_state];
+				[encoder setRenderPipelineState:effects_pipeline_state];
 
 				[encoder setVertexBytes:&viewport_size_pixels
 				                 length:sizeof(viewport_size_pixels)
@@ -1643,10 +1643,10 @@ V3 *game_colors;
 				for (RenderChunk *render_chunk = render_pass->first_render_chunk;
 				        render_chunk != 0; render_chunk = render_chunk->next)
 				{
-					U64 offset = render_chunk->start * sizeof(BlurBox);
+					U64 offset = render_chunk->start * sizeof(EffectsBox);
 					if (render_chunk == render_pass->first_render_chunk)
 					{
-						[encoder setVertexBuffer:blur_box_buffer
+						[encoder setVertexBuffer:effects_box_buffer
 						                  offset:offset
 						                 atIndex:0];
 					}
