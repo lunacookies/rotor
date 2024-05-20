@@ -660,7 +660,8 @@ Button(String8 string)
 	View *view = ViewFromString(string);
 	view->string = string;
 	view->padding = v2(10, 3);
-	view->color = v4(0.35f, 0.35f, 0.35f, 1);
+	view->color = v4(0.8f, 0.8f, 0.8f, 0.2f);
+	view->blur_radius = 48;
 	view->text_color = v4(1, 1, 1, 1);
 	view->border_thickness = 1;
 	view->border_color = v4(0, 0, 0, 1);
@@ -677,12 +678,12 @@ Button(String8 string)
 
 	if (Hovered(signal))
 	{
-		view->color = v4(0.45f, 0.45f, 0.45f, 1);
+		view->color = v4(1, 1, 1, 0.2f);
 	}
 
 	if (Pressed(signal))
 	{
-		view->color = v4(0.15f, 0.15f, 0.15f, 1);
+		view->color = v4(0, 0, 0, 0.2f);
 		view->text_color = v4(0.9f, 0.9f, 0.9f, 1);
 		view->drop_shadow_color = v4(1, 1, 1, 0.2f);
 		view->drop_shadow_softness = 1;
@@ -895,6 +896,9 @@ Scrollable(String8 string, V2 *scroll_position)
 	View *view = ViewFromString(string);
 	view->color = v4(0.1f, 0.1f, 0.1f, 0.5f);
 	view->size_minimum = v2(200, 200);
+	view->corner_radius = 10;
+	view->border_thickness = 1;
+	view->border_color = v4(0, 0, 0, 1);
 	view->clip = 1;
 
 	Signal signal = SignalForView(view);
@@ -1078,12 +1082,25 @@ StartBuild(void)
 {
 	state->root = ViewStateAlloc();
 	state->root->is_first_frame = 1;
-	state->root->view.color = v4(0.1f, 0.1f, 0.1f, 0.7f);
 	state->root->view.padding = v2(20, 20);
-	state->root->view.child_gap = 10;
-	state->root->view.child_layout_axis = Axis2_Y;
-	state->root->view.blur_radius = 10;
 	state->current = state->root;
+
+	MakeNextCurrent();
+	View *root_child = ViewFromString(Str8Lit("root_child"));
+	root_child->padding = v2(20, 20);
+	root_child->child_gap = 10;
+	root_child->child_layout_axis = Axis2_Y;
+	root_child->color = v4(0.15f, 0.15f, 0.15f, 0.7f);
+	root_child->border_thickness = 1;
+	root_child->border_color = v4(0, 0, 0, 1);
+	root_child->drop_shadow_color = v4(0, 0, 0, 0.5f);
+	root_child->drop_shadow_softness = 48;
+	root_child->drop_shadow_offset.y = 12;
+	root_child->inner_shadow_color = v4(1, 1, 1, 0.2f);
+	root_child->inner_shadow_offset.y = 1;
+	root_child->corner_radius = 4;
+	root_child->blur_radius = 8;
+
 	state->build_index++;
 }
 
