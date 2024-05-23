@@ -329,7 +329,7 @@ EffectsFragmentShader(EffectsRasterizerData data [[stage_in]], metal::texture2d<
 	        metal::address::mirrored_repeat);
 
 	F32 weights[sample_count] = {0};
-	GaussianWeights(weights, data.blur_radius);
+	GaussianWeights(weights, data.blur_radius * 0.3f);
 
 	V4 samples = 0;
 	F32 weights_sum = 0;
