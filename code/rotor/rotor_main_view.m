@@ -1426,6 +1426,7 @@ V3 *game_colors;
 	metal_layer.device = MTLCreateSystemDefaultDevice();
 	metal_layer.pixelFormat = MTLPixelFormatRGBA16Float;
 	metal_layer.framebufferOnly = NO;
+	metal_layer.maximumDrawableCount = 2;
 	command_queue = [metal_layer.device newCommandQueue];
 
 	metal_layer.colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
