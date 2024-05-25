@@ -329,7 +329,11 @@ EffectsFragmentShader(EffectsRasterizerData data [[stage_in]], metal::texture2d<
 	        metal::address::mirrored_repeat);
 
 	F32 weights[sample_count] = {0};
-	GaussianWeights(weights, data.blur_radius * 0.3f);
+
+	// Determined experimentally to be a good tradeoff
+	// between cutting off the Gaussian distribution early and
+	// having a large number of samples with irrelevantly-low weights.
+	GaussianWeights(weights, sample_count * 0.2f);
 
 	V4 samples = 0;
 	F32 weights_sum = 0;
