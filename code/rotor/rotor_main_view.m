@@ -33,38 +33,117 @@ struct EffectsBox
 	F32 blur_radius;
 };
 
+typedef struct BoxNode BoxNode;
+struct BoxNode
+{
+	BoxNode *next;
+	Box box;
+};
+
+typedef struct EffectsBoxNode EffectsBoxNode;
+struct EffectsBoxNode
+{
+	EffectsBoxNode *next;
+	EffectsBox effects_box;
+};
+
 typedef struct RenderPass RenderPass;
 struct RenderPass
 {
 	RenderPass *next;
-	U64 start;
-	U64 count;
+	RenderPass *prev;
+	BoxNode *first_box;
+	BoxNode *last_box;
+	EffectsBoxNode *first_effects_box;
+	EffectsBoxNode *last_effects_box;
 	B32 is_effects;
 };
 
 typedef struct Render Render;
 struct Render
 {
-	Box *boxes;
-	EffectsBox *effects_boxes;
-	U64 box_count;
-	U64 box_capacity;
-	U64 effects_box_count;
-	U64 effects_box_capacity;
-
 	RenderPass *first_render_pass;
 	RenderPass *last_render_pass;
+	U64 render_pass_count;
+	U64 box_count;
+	U64 effects_box_count;
 
 	F32 scale_factor;
 };
 
-function RenderPass *
-MatchingRenderPass(Arena *arena, Render *render, B32 is_effects)
+function B32
+Intersects(V2 origin1, V2 size1, V2 origin2, V2 size2)
 {
+	return origin1.x < origin2.x + size2.x && origin1.y < origin2.y + size2.y &&
+	       origin2.x < origin1.x + size1.x && origin2.y < origin1.y + size1.y;
+}
+
+function B32
+AnyEffectsBoxOverlaps(EffectsBoxNode *first_node, V2 origin, V2 size)
+{
+	for (EffectsBoxNode *node = first_node; node != 0; node = node->next)
+	{
+		if (Intersects(origin, size, node->effects_box.origin, node->effects_box.size))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+function B32
+AnyBoxOverlaps(BoxNode *first_node, V2 origin, V2 size)
+{
+	for (BoxNode *node = first_node; node != 0; node = node->next)
+	{
+		if (Intersects(origin, size, node->box.origin, node->box.size))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+function RenderPass *
+MatchingRenderPass(Arena *arena, Render *render, B32 is_effects, V2 box_origin, V2 box_size)
+{
+	for (RenderPass *render_pass = render->last_render_pass; render_pass != 0;
+	        render_pass = render_pass->prev)
+	{
+		if (render_pass->is_effects)
+		{
+			if (AnyEffectsBoxOverlaps(
+			            render_pass->first_effects_box, box_origin, box_size))
+			{
+				break;
+			}
+			if (is_effects)
+			{
+				return render_pass;
+			}
+		}
+		else
+		{
+			if (!is_effects)
+			{
+				return render_pass;
+			}
+			if (AnyBoxOverlaps(render_pass->first_box, box_origin, box_size))
+			{
+				break;
+			}
+		}
+	}
+
+	// No matches.
+
 	RenderPass *new_render_pass = 0;
 
-	if (render->first_render_pass == 0)
+	if (render->render_pass_count == 0)
 	{
+		Assert(render->first_render_pass == 0);
 		Assert(render->last_render_pass == 0);
 		new_render_pass = PushStruct(arena, RenderPass);
 		render->first_render_pass = new_render_pass;
@@ -76,33 +155,41 @@ MatchingRenderPass(Arena *arena, Render *render, B32 is_effects)
 			return render->last_render_pass;
 		}
 		new_render_pass = PushStruct(arena, RenderPass);
+		new_render_pass->prev = render->last_render_pass;
 		render->last_render_pass->next = new_render_pass;
 	}
 
 	render->last_render_pass = new_render_pass;
+	render->render_pass_count++;
 
 	new_render_pass->is_effects = is_effects;
-	if (is_effects)
-	{
-		new_render_pass->start = render->effects_box_count;
-	}
-	else
-	{
-		new_render_pass->start = render->box_count;
-	}
 
 	return new_render_pass;
 }
 
 function Box *
-AddBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, F32 clip_corner_radius)
+AddBox(Arena *arena, Render *render, V2 origin, V2 size, V2 clip_origin, V2 clip_size,
+        F32 clip_corner_radius)
 {
-	Assert(render->box_count < render->box_capacity);
-	RenderPass *render_pass = MatchingRenderPass(arena, render, 0);
-	Box *box = render->boxes + render->box_count;
-	render->box_count++;
-	render_pass->count++;
+	RenderPass *render_pass = MatchingRenderPass(arena, render, 0, origin, size);
+	BoxNode *node = PushStruct(arena, BoxNode);
 
+	if (render_pass->first_box == 0)
+	{
+		Assert(render_pass->last_box == 0);
+		render_pass->first_box = node;
+	}
+	else
+	{
+		render_pass->last_box->next = node;
+	}
+	render_pass->last_box = node;
+
+	Box *box = &node->box;
+	render->box_count++;
+
+	box->origin = origin;
+	box->size = size;
 	box->clip_origin = clip_origin;
 	box->clip_origin.x *= render->scale_factor;
 	box->clip_origin.y *= render->scale_factor;
@@ -118,14 +205,28 @@ AddBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, F32 clip_corn
 }
 
 function EffectsBox *
-AddEffectsBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, F32 clip_corner_radius)
+AddEffectsBox(Arena *arena, Render *render, V2 origin, V2 size, V2 clip_origin, V2 clip_size,
+        F32 clip_corner_radius)
 {
-	Assert(render->effects_box_count < render->effects_box_capacity);
-	RenderPass *render_pass = MatchingRenderPass(arena, render, 1);
-	EffectsBox *effects_box = render->effects_boxes + render->effects_box_count;
-	render->effects_box_count++;
-	render_pass->count++;
+	RenderPass *render_pass = MatchingRenderPass(arena, render, 1, origin, size);
+	EffectsBoxNode *node = PushStruct(arena, EffectsBoxNode);
 
+	if (render_pass->first_effects_box == 0)
+	{
+		Assert(render_pass->last_effects_box == 0);
+		render_pass->first_effects_box = node;
+	}
+	else
+	{
+		render_pass->last_effects_box->next = node;
+	}
+	render_pass->last_effects_box = node;
+
+	EffectsBox *effects_box = &node->effects_box;
+	render->effects_box_count++;
+
+	effects_box->origin = origin;
+	effects_box->size = size;
 	effects_box->clip_origin = clip_origin;
 	effects_box->clip_origin.x *= render->scale_factor;
 	effects_box->clip_origin.y *= render->scale_factor;
@@ -138,6 +239,84 @@ AddEffectsBox(Arena *arena, Render *render, V2 clip_origin, V2 clip_size, F32 cl
 	effects_box->clip_corner_radius *= render->scale_factor;
 
 	return effects_box;
+}
+
+typedef struct SerializedRenderPass SerializedRenderPass;
+struct SerializedRenderPass
+{
+	U64 start;
+	U64 count;
+	B32 is_effects;
+};
+
+typedef struct SerializedRender SerializedRender;
+struct SerializedRender
+{
+	id<MTLBuffer> box_buffer;
+	id<MTLBuffer> effects_box_buffer;
+	SerializedRenderPass *render_passes;
+	U64 render_pass_count;
+};
+
+function void
+SerializeRender(Arena *arena, Render *render, SerializedRender *result, id<MTLDevice> device)
+{
+	if (render->box_count > 0)
+	{
+		result->box_buffer = [device newBufferWithLength:render->box_count * sizeof(Box)
+		                                         options:MTLResourceStorageModeShared];
+	}
+
+	if (render->effects_box_count > 0)
+	{
+		result->effects_box_buffer =
+		        [device newBufferWithLength:render->effects_box_count * sizeof(EffectsBox)
+		                            options:MTLResourceStorageModeShared];
+	}
+
+	result->render_passes = PushArray(arena, SerializedRenderPass, render->render_pass_count);
+
+	Box *boxes = result->box_buffer.contents;
+	EffectsBox *effects_boxes = result->effects_box_buffer.contents;
+
+	U64 used_boxes = 0;
+	U64 used_effects_boxes = 0;
+
+	for (RenderPass *render_pass = render->first_render_pass; render_pass != 0;
+	        render_pass = render_pass->next)
+	{
+		SerializedRenderPass *serialized_render_pass =
+		        result->render_passes + result->render_pass_count;
+		result->render_pass_count++;
+
+		B32 is_effects = render_pass->is_effects;
+		serialized_render_pass->is_effects = is_effects;
+
+		if (is_effects)
+		{
+			serialized_render_pass->start = used_effects_boxes;
+			for (EffectsBoxNode *node = render_pass->first_effects_box; node != 0;
+			        node = node->next)
+			{
+				Assert(used_effects_boxes < render->effects_box_count);
+				MemoryCopyStruct(
+				        effects_boxes + used_effects_boxes, &node->effects_box);
+				used_effects_boxes++;
+				serialized_render_pass->count++;
+			}
+		}
+		else
+		{
+			serialized_render_pass->start = used_boxes;
+			for (BoxNode *node = render_pass->first_box; node != 0; node = node->next)
+			{
+				Assert(used_boxes < render->box_count);
+				MemoryCopyStruct(boxes + used_boxes, &node->box);
+				used_boxes++;
+				serialized_render_pass->count++;
+			}
+		}
+	}
 }
 
 typedef struct RasterizedLine RasterizedLine;
@@ -661,7 +840,6 @@ Button(String8 string)
 	view->string = string;
 	view->padding = v2(10, 3);
 	view->color = v4(0.8f, 0.8f, 0.8f, 0.2f);
-	view->blur_radius = 48;
 	view->text_color = v4(1, 1, 1, 1);
 	view->border_thickness = 1;
 	view->border_color = v4(0, 0, 0, 1);
@@ -673,6 +851,7 @@ Button(String8 string)
 	view->inner_shadow_offset.y = 1;
 	view->text_shadow_color = v4(0, 0, 0, 1);
 	view->text_shadow_offset = v2(0, -0.5f);
+	view->blur_radius = 48;
 
 	Signal signal = SignalForView(view);
 
@@ -1213,28 +1392,32 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 
 	if (view_state->view.blur_radius > 0)
 	{
-		EffectsBox *box = AddEffectsBox(
-		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
-		box->origin = inside_border_origin;
-		box->origin.x *= scale_factor;
-		box->origin.y *= scale_factor;
-		box->size = inside_border_size;
-		box->size.x *= scale_factor;
-		box->size.y *= scale_factor;
+		V2 origin = inside_border_origin;
+		origin.x *= scale_factor;
+		origin.y *= scale_factor;
+
+		V2 size = inside_border_size;
+		size.x *= scale_factor;
+		size.y *= scale_factor;
+
+		EffectsBox *box = AddEffectsBox(state->frame_arena, render, origin, size,
+		        clip_origin, clip_size, clip_corner_radius);
 		box->corner_radius = inside_border_corner_radius * scale_factor;
 		box->blur_radius = view_state->view.blur_radius * scale_factor;
 	}
 
 	if (view_state->view.color.a > 0)
 	{
-		Box *box = AddBox(
-		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
-		box->origin = inside_border_origin;
-		box->origin.x *= scale_factor;
-		box->origin.y *= scale_factor;
-		box->size = inside_border_size;
-		box->size.x *= scale_factor;
-		box->size.y *= scale_factor;
+		V2 origin = inside_border_origin;
+		origin.x *= scale_factor;
+		origin.y *= scale_factor;
+
+		V2 size = inside_border_size;
+		size.x *= scale_factor;
+		size.y *= scale_factor;
+
+		Box *box = AddBox(state->frame_arena, render, origin, size, clip_origin, clip_size,
+		        clip_corner_radius);
 		box->color = view_state->view.color;
 		box->corner_radius = inside_border_corner_radius * scale_factor;
 	}
@@ -1265,15 +1448,18 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 				GlyphAtlasSlot *slot =
 				        view_state->rasterized_line.slots[glyph_index];
 
-				Box *box = AddBox(state->frame_arena, render, clip_origin,
-				        clip_size, clip_corner_radius);
-				box->origin = view_state->rasterized_line.positions[glyph_index];
-				box->origin.x += text_shadow_origin.x;
-				box->origin.y += text_shadow_origin.y;
+				V2 origin = view_state->rasterized_line.positions[glyph_index];
+				origin.x += text_shadow_origin.x;
+				origin.y += text_shadow_origin.y;
+
+				V2 size = {0};
+				size.x = slot->size.x;
+				size.y = slot->size.y;
+
+				Box *box = AddBox(state->frame_arena, render, origin, size,
+				        clip_origin, clip_size, clip_corner_radius);
 				box->texture_origin.x = slot->origin.x;
 				box->texture_origin.y = slot->origin.y;
-				box->size.x = slot->size.x;
-				box->size.y = slot->size.y;
 				box->texture_size.x = slot->size.x;
 				box->texture_size.y = slot->size.y;
 				box->color = view_state->view.text_shadow_color;
@@ -1285,15 +1471,18 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 		{
 			GlyphAtlasSlot *slot = view_state->rasterized_line.slots[glyph_index];
 
-			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size,
-			        clip_corner_radius);
-			box->origin = view_state->rasterized_line.positions[glyph_index];
-			box->origin.x += text_origin.x;
-			box->origin.y += text_origin.y;
+			V2 origin = view_state->rasterized_line.positions[glyph_index];
+			origin.x += text_origin.x;
+			origin.y += text_origin.y;
+
+			V2 size = {0};
+			size.x = slot->size.x;
+			size.y = slot->size.y;
+
+			Box *box = AddBox(state->frame_arena, render, origin, size, clip_origin,
+			        clip_size, clip_corner_radius);
 			box->texture_origin.x = slot->origin.x;
 			box->texture_origin.y = slot->origin.y;
-			box->size.x = slot->size.x;
-			box->size.y = slot->size.y;
 			box->texture_size.x = slot->size.x;
 			box->texture_size.y = slot->size.y;
 			box->color = view_state->view.text_color;
@@ -1304,16 +1493,18 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 	{
 		if (child->view.drop_shadow_color.a > 0)
 		{
-			Box *box = AddBox(state->frame_arena, render, clip_origin, clip_size,
-			        clip_corner_radius);
-			box->origin = child->origin;
-			box->origin.x += child->view.drop_shadow_offset.x;
-			box->origin.y += child->view.drop_shadow_offset.y;
-			box->origin.x *= scale_factor;
-			box->origin.y *= scale_factor;
-			box->size = child->size;
-			box->size.x *= scale_factor;
-			box->size.y *= scale_factor;
+			V2 origin = child->origin;
+			origin.x += child->view.drop_shadow_offset.x;
+			origin.y += child->view.drop_shadow_offset.y;
+			origin.x *= scale_factor;
+			origin.y *= scale_factor;
+
+			V2 size = child->size;
+			size.x *= scale_factor;
+			size.y *= scale_factor;
+
+			Box *box = AddBox(state->frame_arena, render, origin, size, clip_origin,
+			        clip_size, clip_corner_radius);
 			box->color = child->view.drop_shadow_color;
 			box->corner_radius = child->view.corner_radius * scale_factor;
 			box->softness = child->view.drop_shadow_softness * scale_factor;
@@ -1334,16 +1525,18 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 
 	if (view_state->view.inner_shadow_color.a > 0)
 	{
-		Box *box = AddBox(
-		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
-		box->origin = inside_border_origin;
-		box->origin.x += view_state->view.inner_shadow_offset.x;
-		box->origin.y += view_state->view.inner_shadow_offset.y;
-		box->origin.x *= scale_factor;
-		box->origin.y *= scale_factor;
-		box->size = inside_border_size;
-		box->size.x *= scale_factor;
-		box->size.y *= scale_factor;
+		V2 origin = inside_border_origin;
+		origin.x += view_state->view.inner_shadow_offset.x;
+		origin.y += view_state->view.inner_shadow_offset.y;
+		origin.x *= scale_factor;
+		origin.y *= scale_factor;
+
+		V2 size = inside_border_size;
+		size.x *= scale_factor;
+		size.y *= scale_factor;
+
+		Box *box = AddBox(state->frame_arena, render, origin, size, clip_origin, clip_size,
+		        clip_corner_radius);
 		box->color = view_state->view.inner_shadow_color;
 		box->corner_radius = inside_border_corner_radius * scale_factor;
 		box->softness = view_state->view.inner_shadow_softness * scale_factor;
@@ -1358,14 +1551,16 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 
 	if (view_state->view.border_thickness > 0)
 	{
-		Box *box = AddBox(
-		        state->frame_arena, render, clip_origin, clip_size, clip_corner_radius);
-		box->origin = view_state->origin;
-		box->origin.x *= scale_factor;
-		box->origin.y *= scale_factor;
-		box->size = view_state->size;
-		box->size.x *= scale_factor;
-		box->size.y *= scale_factor;
+		V2 origin = view_state->origin;
+		origin.x *= scale_factor;
+		origin.y *= scale_factor;
+
+		V2 size = view_state->size;
+		size.x *= scale_factor;
+		size.y *= scale_factor;
+
+		Box *box = AddBox(state->frame_arena, render, origin, size, clip_origin, clip_size,
+		        clip_corner_radius);
 		box->color = view_state->view.border_color;
 		box->border_thickness = view_state->view.border_thickness * scale_factor;
 		box->corner_radius = view_state->view.corner_radius * scale_factor;
@@ -1522,17 +1717,6 @@ V3 *game_colors;
 
 	Render render = {0};
 	render.scale_factor = scale_factor;
-	render.box_capacity = 1024;
-	render.effects_box_capacity = 128;
-
-	id<MTLBuffer> box_buffer =
-	        [metal_layer.device newBufferWithLength:render.box_capacity * sizeof(Box)
-	                                        options:MTLResourceStorageModeShared];
-	id<MTLBuffer> effects_box_buffer = [metal_layer.device
-	        newBufferWithLength:render.effects_box_capacity * sizeof(EffectsBox)
-	                    options:MTLResourceStorageModeShared];
-	render.boxes = box_buffer.contents;
-	render.effects_boxes = effects_box_buffer.contents;
 
 	V2 viewport_size = {0};
 	viewport_size.x = (F32)self.bounds.size.width;
@@ -1542,6 +1726,9 @@ V3 *game_colors;
 	BuildUI();
 	EndBuild(viewport_size);
 	RenderUI(scale_factor, &render);
+
+	SerializedRender serialized_render = {0};
+	SerializeRender(frame_arena, &render, &serialized_render, metal_layer.device);
 
 	for (U64 i = 0; i < game_count; i++)
 	{
@@ -1584,6 +1771,8 @@ V3 *game_colors;
 		id<MTLRenderCommandEncoder> encoder =
 		        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
 
+		encoder.label = @"Draw game";
+
 		[encoder setRenderPipelineState:game_pipeline_state];
 
 		[encoder setVertexBytes:game_positions length:game_count * sizeof(V2) atIndex:0];
@@ -1602,36 +1791,70 @@ V3 *game_colors;
 	viewport_size_pixels.x *= scale_factor;
 	viewport_size_pixels.y *= scale_factor;
 
-	for (RenderPass *render_pass = render.first_render_pass; render_pass != 0;
-	        render_pass = render_pass->next)
+	MTLRenderPassDescriptor *drawable_render_pass_descriptor =
+	        [MTLRenderPassDescriptor renderPassDescriptor];
+	drawable_render_pass_descriptor.colorAttachments[0].texture = drawable_texture;
+	drawable_render_pass_descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+	drawable_render_pass_descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+
+	id<MTLRenderCommandEncoder> drawable_encoder =
+	        [command_buffer renderCommandEncoderWithDescriptor:drawable_render_pass_descriptor];
+
+	for (U64 render_pass_index = 0; render_pass_index < serialized_render.render_pass_count;
+	        render_pass_index++)
 	{
+		SerializedRenderPass *render_pass =
+		        serialized_render.render_passes + render_pass_index;
+
 		if (render_pass->is_effects)
 		{
 			id<MTLBlitCommandEncoder> blit_encoder = [command_buffer
 			        blitCommandEncoderWithDescriptor:[MTLBlitPassDescriptor
 			                                                 blitPassDescriptor]];
+			blit_encoder.label = @"Swap blur back-buffers";
 			[blit_encoder copyFromTexture:drawable_texture toTexture:offscreen_texture];
 			[blit_encoder endEncoding];
 
 			for (B32 is_vertical = 0; is_vertical <= 1; is_vertical++)
 			{
-				MTLRenderPassDescriptor *descriptor =
-				        [MTLRenderPassDescriptor renderPassDescriptor];
+				id<MTLRenderCommandEncoder> encoder = nil;
 
 				if (is_vertical)
 				{
-					descriptor.colorAttachments[0].texture = drawable_texture;
+					drawable_render_pass_descriptor =
+					        [MTLRenderPassDescriptor renderPassDescriptor];
+					drawable_render_pass_descriptor.colorAttachments[0]
+					        .texture = drawable_texture;
+					drawable_render_pass_descriptor.colorAttachments[0]
+					        .storeAction = MTLStoreActionStore;
+					drawable_render_pass_descriptor.colorAttachments[0]
+					        .loadAction = MTLLoadActionLoad;
+					drawable_encoder = [command_buffer
+					        renderCommandEncoderWithDescriptor:
+					                drawable_render_pass_descriptor];
+					encoder = drawable_encoder;
 				}
 				else
 				{
+					MTLRenderPassDescriptor *descriptor =
+					        [MTLRenderPassDescriptor renderPassDescriptor];
 					descriptor.colorAttachments[0].texture = offscreen_texture;
+					descriptor.colorAttachments[0].storeAction =
+					        MTLStoreActionStore;
+					descriptor.colorAttachments[0].loadAction =
+					        MTLLoadActionLoad;
+					encoder = [command_buffer
+					        renderCommandEncoderWithDescriptor:descriptor];
 				}
 
-				descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-				descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
-
-				id<MTLRenderCommandEncoder> encoder = [command_buffer
-				        renderCommandEncoderWithDescriptor:descriptor];
+				if (is_vertical)
+				{
+					[encoder pushDebugGroup:@"Vertical blur"];
+				}
+				else
+				{
+					[encoder pushDebugGroup:@"Horizontal blur"];
+				}
 
 				[encoder setRenderPipelineState:effects_pipeline_state];
 
@@ -1652,7 +1875,7 @@ V3 *game_colors;
 					[encoder setFragmentTexture:drawable_texture atIndex:0];
 				}
 
-				[encoder setVertexBuffer:effects_box_buffer
+				[encoder setVertexBuffer:serialized_render.effects_box_buffer
 				                  offset:render_pass->start * sizeof(EffectsBox)
 				                 atIndex:0];
 
@@ -1661,45 +1884,45 @@ V3 *game_colors;
 				            vertexCount:6
 				          instanceCount:render_pass->count];
 
-				[encoder endEncoding];
+				[encoder popDebugGroup];
+
+				if (encoder != drawable_encoder)
+				{
+					[encoder endEncoding];
+				}
 			}
 		}
 		else
 		{
-			MTLRenderPassDescriptor *descriptor =
-			        [MTLRenderPassDescriptor renderPassDescriptor];
-			descriptor.colorAttachments[0].texture = drawable_texture;
-			descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-			descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
+			[drawable_encoder pushDebugGroup:@"Draw boxes"];
 
-			id<MTLRenderCommandEncoder> encoder =
-			        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
+			[drawable_encoder setRenderPipelineState:pipeline_state];
 
-			[encoder setRenderPipelineState:pipeline_state];
-
-			[encoder setVertexBytes:&viewport_size_pixels
-			                 length:sizeof(viewport_size_pixels)
-			                atIndex:1];
+			[drawable_encoder setVertexBytes:&viewport_size_pixels
+			                          length:sizeof(viewport_size_pixels)
+			                         atIndex:1];
 
 			V2 glyph_atlas_size = {0};
 			glyph_atlas_size.x = (F32)glyph_atlas.size.x;
 			glyph_atlas_size.y = (F32)glyph_atlas.size.y;
-			[encoder setVertexBytes:&glyph_atlas_size
-			                 length:sizeof(glyph_atlas_size)
-			                atIndex:2];
+			[drawable_encoder setVertexBytes:&glyph_atlas_size
+			                          length:sizeof(glyph_atlas_size)
+			                         atIndex:2];
 
-			[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
+			[drawable_encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
 
-			[encoder setVertexBuffer:box_buffer
-			                  offset:render_pass->start * sizeof(Box)
-			                 atIndex:0];
+			[drawable_encoder setVertexBuffer:serialized_render.box_buffer
+			                           offset:render_pass->start * sizeof(Box)
+			                          atIndex:0];
 
-			[encoder drawPrimitives:MTLPrimitiveTypeTriangle
-			            vertexStart:0
-			            vertexCount:6
-			          instanceCount:render_pass->count];
+			[drawable_encoder drawPrimitives:MTLPrimitiveTypeTriangle
+			                     vertexStart:0
+			                     vertexCount:6
+			                   instanceCount:render_pass->count];
 
-			[encoder endEncoding];
+			[drawable_encoder popDebugGroup];
+
+			[drawable_encoder endEncoding];
 		}
 	}
 
@@ -1754,6 +1977,7 @@ V3 *game_colors;
 	descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
 
 	offscreen_texture = [metal_layer.device newTextureWithDescriptor:descriptor];
+	offscreen_texture.label = @"Offscreen texture";
 }
 
 function CVReturn
