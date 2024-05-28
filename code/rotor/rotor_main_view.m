@@ -19,6 +19,7 @@ struct Box
 	V2 clip_size;
 	F32 clip_corner_radius;
 	B32 invert;
+	B32 effects_background;
 };
 
 typedef struct EffectsBox EffectsBox;
@@ -26,10 +27,6 @@ struct EffectsBox
 {
 	V2 origin;
 	V2 size;
-	V2 clip_origin;
-	V2 clip_size;
-	F32 clip_corner_radius;
-	F32 corner_radius;
 	F32 blur_radius;
 };
 
@@ -205,8 +202,7 @@ AddBox(Arena *arena, Render *render, V2 origin, V2 size, V2 clip_origin, V2 clip
 }
 
 function EffectsBox *
-AddEffectsBox(Arena *arena, Render *render, V2 origin, V2 size, V2 clip_origin, V2 clip_size,
-        F32 clip_corner_radius)
+AddEffectsBox(Arena *arena, Render *render, V2 origin, V2 size)
 {
 	RenderPass *render_pass = MatchingRenderPass(arena, render, 1, origin, size);
 	EffectsBoxNode *node = PushStruct(arena, EffectsBoxNode);
@@ -227,16 +223,6 @@ AddEffectsBox(Arena *arena, Render *render, V2 origin, V2 size, V2 clip_origin, 
 
 	effects_box->origin = origin;
 	effects_box->size = size;
-	effects_box->clip_origin = clip_origin;
-	effects_box->clip_origin.x *= render->scale_factor;
-	effects_box->clip_origin.y *= render->scale_factor;
-
-	effects_box->clip_size = clip_size;
-	effects_box->clip_size.x *= render->scale_factor;
-	effects_box->clip_size.y *= render->scale_factor;
-
-	effects_box->clip_corner_radius = clip_corner_radius;
-	effects_box->clip_corner_radius *= render->scale_factor;
 
 	return effects_box;
 }
@@ -1292,6 +1278,8 @@ EndBuild(V2 viewport_size)
 	state->last_event = 0;
 }
 
+const F32 offscreen_texture_scale_factor = 0.5;
+
 function void
 BuildUI(void)
 {
@@ -1400,13 +1388,11 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 		size.x *= scale_factor;
 		size.y *= scale_factor;
 
-		EffectsBox *box = AddEffectsBox(state->frame_arena, render, origin, size,
-		        clip_origin, clip_size, clip_corner_radius);
-		box->corner_radius = inside_border_corner_radius * scale_factor;
+		EffectsBox *box = AddEffectsBox(state->frame_arena, render, origin, size);
 		box->blur_radius = view_state->view.blur_radius * scale_factor;
 	}
 
-	if (view_state->view.color.a > 0)
+	if (view_state->view.color.a > 0 || view_state->view.blur_radius > 0)
 	{
 		V2 origin = inside_border_origin;
 		origin.x *= scale_factor;
@@ -1420,6 +1406,11 @@ RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_co
 		        clip_corner_radius);
 		box->color = view_state->view.color;
 		box->corner_radius = inside_border_corner_radius * scale_factor;
+
+		if (view_state->view.blur_radius > 0)
+		{
+			box->effects_background = 1;
+		}
 	}
 
 	if (view_state->view.text_color.a > 0)
@@ -1594,7 +1585,8 @@ CAMetalLayer *metal_layer;
 id<MTLCommandQueue> command_queue;
 id<MTLRenderPipelineState> pipeline_state;
 id<MTLRenderPipelineState> effects_pipeline_state;
-id<MTLTexture> offscreen_texture;
+id<MTLTexture> offscreen_texture_1;
+id<MTLTexture> offscreen_texture_2;
 
 CVDisplayLinkRef display_link;
 
@@ -1791,15 +1783,6 @@ V3 *game_colors;
 	viewport_size_pixels.x *= scale_factor;
 	viewport_size_pixels.y *= scale_factor;
 
-	MTLRenderPassDescriptor *drawable_render_pass_descriptor =
-	        [MTLRenderPassDescriptor renderPassDescriptor];
-	drawable_render_pass_descriptor.colorAttachments[0].texture = drawable_texture;
-	drawable_render_pass_descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-	drawable_render_pass_descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
-
-	id<MTLRenderCommandEncoder> drawable_encoder =
-	        [command_buffer renderCommandEncoderWithDescriptor:drawable_render_pass_descriptor];
-
 	for (U64 render_pass_index = 0; render_pass_index < serialized_render.render_pass_count;
 	        render_pass_index++)
 	{
@@ -1808,52 +1791,34 @@ V3 *game_colors;
 
 		if (render_pass->is_effects)
 		{
-			id<MTLBlitCommandEncoder> blit_encoder = [command_buffer
-			        blitCommandEncoderWithDescriptor:[MTLBlitPassDescriptor
-			                                                 blitPassDescriptor]];
-			blit_encoder.label = @"Swap blur back-buffers";
-			[blit_encoder copyFromTexture:drawable_texture toTexture:offscreen_texture];
-			[blit_encoder endEncoding];
-
 			for (B32 is_vertical = 0; is_vertical <= 1; is_vertical++)
 			{
-				id<MTLRenderCommandEncoder> encoder = nil;
+				MTLRenderPassDescriptor *descriptor =
+				        [MTLRenderPassDescriptor renderPassDescriptor];
+				descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+				descriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
 
 				if (is_vertical)
 				{
-					drawable_render_pass_descriptor =
-					        [MTLRenderPassDescriptor renderPassDescriptor];
-					drawable_render_pass_descriptor.colorAttachments[0]
-					        .texture = drawable_texture;
-					drawable_render_pass_descriptor.colorAttachments[0]
-					        .storeAction = MTLStoreActionStore;
-					drawable_render_pass_descriptor.colorAttachments[0]
-					        .loadAction = MTLLoadActionLoad;
-					drawable_encoder = [command_buffer
-					        renderCommandEncoderWithDescriptor:
-					                drawable_render_pass_descriptor];
-					encoder = drawable_encoder;
+					descriptor.colorAttachments[0].texture =
+					        offscreen_texture_1;
 				}
 				else
 				{
-					MTLRenderPassDescriptor *descriptor =
-					        [MTLRenderPassDescriptor renderPassDescriptor];
-					descriptor.colorAttachments[0].texture = offscreen_texture;
-					descriptor.colorAttachments[0].storeAction =
-					        MTLStoreActionStore;
-					descriptor.colorAttachments[0].loadAction =
-					        MTLLoadActionLoad;
-					encoder = [command_buffer
-					        renderCommandEncoderWithDescriptor:descriptor];
+					descriptor.colorAttachments[0].texture =
+					        offscreen_texture_2;
 				}
+
+				id<MTLRenderCommandEncoder> encoder = [command_buffer
+				        renderCommandEncoderWithDescriptor:descriptor];
 
 				if (is_vertical)
 				{
-					[encoder pushDebugGroup:@"Vertical blur"];
+					encoder.label = @"Vertical blur";
 				}
 				else
 				{
-					[encoder pushDebugGroup:@"Horizontal blur"];
+					encoder.label = @"Horizontal blur";
 				}
 
 				[encoder setRenderPipelineState:effects_pipeline_state];
@@ -1866,9 +1831,13 @@ V3 *game_colors;
 				                 length:sizeof(is_vertical)
 				                atIndex:2];
 
+				[encoder setVertexBytes:&offscreen_texture_scale_factor
+				                 length:sizeof(offscreen_texture_scale_factor)
+				                atIndex:3];
+
 				if (is_vertical)
 				{
-					[encoder setFragmentTexture:offscreen_texture atIndex:0];
+					[encoder setFragmentTexture:offscreen_texture_2 atIndex:0];
 				}
 				else
 				{
@@ -1884,45 +1853,47 @@ V3 *game_colors;
 				            vertexCount:6
 				          instanceCount:render_pass->count];
 
-				[encoder popDebugGroup];
-
-				if (encoder != drawable_encoder)
-				{
-					[encoder endEncoding];
-				}
+				[encoder endEncoding];
 			}
 		}
 		else
 		{
-			[drawable_encoder pushDebugGroup:@"Draw boxes"];
+			MTLRenderPassDescriptor *descriptor =
+			        [MTLRenderPassDescriptor renderPassDescriptor];
+			descriptor.colorAttachments[0].texture = drawable_texture;
+			descriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+			descriptor.colorAttachments[0].loadAction = MTLLoadActionLoad;
 
-			[drawable_encoder setRenderPipelineState:pipeline_state];
+			id<MTLRenderCommandEncoder> encoder =
+			        [command_buffer renderCommandEncoderWithDescriptor:descriptor];
+			encoder.label = @"Draw boxes";
 
-			[drawable_encoder setVertexBytes:&viewport_size_pixels
-			                          length:sizeof(viewport_size_pixels)
-			                         atIndex:1];
+			[encoder setRenderPipelineState:pipeline_state];
+
+			[encoder setVertexBuffer:serialized_render.box_buffer
+			                  offset:render_pass->start * sizeof(Box)
+			                 atIndex:0];
+
+			[encoder setVertexBytes:&viewport_size_pixels
+			                 length:sizeof(viewport_size_pixels)
+			                atIndex:1];
 
 			V2 glyph_atlas_size = {0};
 			glyph_atlas_size.x = (F32)glyph_atlas.size.x;
 			glyph_atlas_size.y = (F32)glyph_atlas.size.y;
-			[drawable_encoder setVertexBytes:&glyph_atlas_size
-			                          length:sizeof(glyph_atlas_size)
-			                         atIndex:2];
+			[encoder setVertexBytes:&glyph_atlas_size
+			                 length:sizeof(glyph_atlas_size)
+			                atIndex:2];
 
-			[drawable_encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
+			[encoder setFragmentTexture:glyph_atlas.texture atIndex:0];
+			[encoder setFragmentTexture:offscreen_texture_1 atIndex:1];
 
-			[drawable_encoder setVertexBuffer:serialized_render.box_buffer
-			                           offset:render_pass->start * sizeof(Box)
-			                          atIndex:0];
+			[encoder drawPrimitives:MTLPrimitiveTypeTriangle
+			            vertexStart:0
+			            vertexCount:6
+			          instanceCount:render_pass->count];
 
-			[drawable_encoder drawPrimitives:MTLPrimitiveTypeTriangle
-			                     vertexStart:0
-			                     vertexCount:6
-			                   instanceCount:render_pass->count];
-
-			[drawable_encoder popDebugGroup];
-
-			[drawable_encoder endEncoding];
+			[encoder endEncoding];
 		}
 	}
 
@@ -1943,7 +1914,7 @@ V3 *game_colors;
 	metal_layer.contentsScale = self.window.backingScaleFactor;
 	CVDisplayLinkStart(display_link);
 
-	[self updateOffscreenTexture];
+	[self updateOffscreenTextures];
 }
 
 - (void)setFrameSize:(NSSize)size
@@ -1960,14 +1931,15 @@ V3 *game_colors;
 
 	metal_layer.drawableSize = size;
 
-	[self updateOffscreenTexture];
+	[self updateOffscreenTextures];
 }
 
-- (void)updateOffscreenTexture
+- (void)updateOffscreenTextures
 {
 	F32 scale_factor = (F32)self.window.backingScaleFactor;
-	U64 width = (U64)(self.frame.size.width * scale_factor);
-	U64 height = (U64)(self.frame.size.height * scale_factor);
+
+	U64 width = (U64)(self.frame.size.width * scale_factor * offscreen_texture_scale_factor);
+	U64 height = (U64)(self.frame.size.height * scale_factor * offscreen_texture_scale_factor);
 
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
 	descriptor.pixelFormat = metal_layer.pixelFormat;
@@ -1976,8 +1948,11 @@ V3 *game_colors;
 	descriptor.storageMode = MTLStorageModePrivate;
 	descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
 
-	offscreen_texture = [metal_layer.device newTextureWithDescriptor:descriptor];
-	offscreen_texture.label = @"Offscreen texture";
+	offscreen_texture_1 = [metal_layer.device newTextureWithDescriptor:descriptor];
+	offscreen_texture_1.label = @"Offscreen texture 1";
+
+	offscreen_texture_2 = [metal_layer.device newTextureWithDescriptor:descriptor];
+	offscreen_texture_2.label = @"Offscreen texture 2";
 }
 
 function CVReturn

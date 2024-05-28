@@ -40,16 +40,13 @@ struct Box
 	V2 clip_size;
 	F32 clip_corner_radius;
 	B32 invert;
+	B32 effects_background;
 };
 
 struct EffectsBox
 {
 	V2 origin;
 	V2 size;
-	V2 clip_origin;
-	V2 clip_size;
-	F32 clip_corner_radius;
-	F32 corner_radius;
 	F32 blur_radius;
 };
 
@@ -89,7 +86,8 @@ Rectangle(V2 sample_position, V2 center, V2 half_size, F32 corner_radius)
 
 struct RasterizerData
 {
-	V4 bounds_position_ndc [[position]];
+	V4 position_ndc [[position]];
+	V2 position_uv;
 	V2 position;
 	V2 center;
 	V2 half_size;
@@ -105,6 +103,7 @@ struct RasterizerData
 	F32 corner_radius;
 	F32 softness;
 	B32 invert;
+	B32 effects_background;
 };
 
 vertex RasterizerData
@@ -142,11 +141,8 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	V2 bounds_origin_rounding = bounds_origin_rounded - box.origin;
 	V2 bounds_size_rounding = bounds_size_rounded - box.size;
 
-	V2 bounds_position_ndc =
-	        ((bounds_origin_rounded + bounds_size_rounded * corner) / *bounds * 2 - 1) *
-	        V2(1, -1);
-	result.bounds_position_ndc = V4(bounds_position_ndc, 0, 1);
-
+	result.position_uv = (bounds_origin_rounded + bounds_size_rounded * corner) / *bounds;
+	result.position_ndc = V4((result.position_uv * 2 - 1) * V2(1, -1), 0, 1);
 	result.position = bounds_origin_rounded + bounds_size_rounded * corner;
 
 	// Don’t apply more softness than the size of the box itself.
@@ -181,12 +177,14 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
 	result.softness = box.softness;
 	result.invert = box.invert;
+	result.effects_background = box.effects_background;
 
 	return result;
 }
 
 fragment V4
-FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atlas)
+FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atlas,
+        metal::texture2d<F32> effects_background)
 {
 	F32 factor = 1;
 
@@ -233,22 +231,23 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 		factor *= glyph_atlas.sample(glyph_atlas_sampler, data.texture_coordinates).r;
 	}
 
+	if (data.effects_background)
+	{
+		metal::sampler effects_background_sampler(
+		        metal::mag_filter::linear, metal::min_filter::linear);
+		V4 effects_background_color =
+		        effects_background.sample(effects_background_sampler, data.position_uv);
+		return factor * (data.color + effects_background_color * (1 - data.color.a));
+	}
+
 	return data.color * factor;
 }
 
 struct EffectsRasterizerData
 {
-	V4 bounds_position_ndc [[position]];
-	V2 position;
-	V2 center;
-	V2 half_size;
-	F32 corner_radius;
-	V2 clip_center;
-	V2 clip_half_size;
-	F32 clip_corner_radius;
+	V4 position_ndc [[position]];
 	V2 texture_coordinates;
 	V2 step_size;
-	F32 blur_radius;
 	V2 bounds_p0_uv;
 	V2 bounds_p1_uv;
 };
@@ -257,32 +256,27 @@ constant global U32 sample_count = 64;
 
 vertex EffectsRasterizerData
 EffectsVertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]],
-        constant EffectsBox *boxes, constant V2 *bounds, constant B32 *is_vertical)
+        constant EffectsBox *boxes, constant V2 *bounds, constant B32 *is_vertical,
+        constant F32 *offscreen_texture_scale_factor)
 {
 	EffectsRasterizerData result = {0};
 
 	V2 corner = corners[vertex_id];
 	EffectsBox box = boxes[instance_id];
 
-	V2 bounds_p0_rounded = metal::floor(box.origin);
-	V2 bounds_p1_rounded = metal::ceil(box.origin + box.size);
+	// Extend blurred region slightly to prevent falloff to black during texture sampling.
+	F32 slop = 1;
+	V2 bounds_p0_rounded = metal::floor(box.origin * *offscreen_texture_scale_factor - slop) /
+	                       *offscreen_texture_scale_factor;
+	V2 bounds_p1_rounded =
+	        metal::ceil((box.origin + box.size) * *offscreen_texture_scale_factor + slop) /
+	        *offscreen_texture_scale_factor;
 	V2 bounds_origin_rounded = bounds_p0_rounded;
 	V2 bounds_size_rounded = bounds_p1_rounded - bounds_p0_rounded;
-	V2 bounds_position_ndc =
+	V2 position_ndc =
 	        ((bounds_origin_rounded + bounds_size_rounded * corner) / *bounds * 2 - 1) *
 	        V2(1, -1);
-	result.bounds_position_ndc = V4(bounds_position_ndc, 0, 1);
-	result.position = bounds_origin_rounded + bounds_size_rounded * corner;
-
-	F32 shortest_side = metal::min(box.size.x, box.size.y);
-
-	result.center = box.origin + box.size * 0.5;
-	result.half_size = 0.5 * box.size;
-	result.corner_radius = metal::min(box.corner_radius, 0.5 * shortest_side);
-
-	result.clip_center = box.clip_origin + box.clip_size * 0.5;
-	result.clip_half_size = 0.5 * box.clip_size;
-	result.clip_corner_radius = box.clip_corner_radius;
+	result.position_ndc = V4(position_ndc, 0, 1);
 
 	result.texture_coordinates =
 	        (bounds_origin_rounded + bounds_size_rounded * corner) / *bounds;
@@ -296,8 +290,6 @@ EffectsVertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]]
 		result.step_size = V2(1 / bounds->x, 0);
 	}
 	result.step_size *= box.blur_radius / sample_count;
-
-	result.blur_radius = box.blur_radius;
 
 	result.bounds_p0_uv = bounds_p0_rounded / *bounds;
 	result.bounds_p1_uv = bounds_p1_rounded / *bounds;
@@ -318,13 +310,6 @@ GaussianWeights(thread F32 *weights, F32 sigma)
 fragment V4
 EffectsFragmentShader(EffectsRasterizerData data [[stage_in]], metal::texture2d<F32> behind)
 {
-	F32 distance = Rectangle(data.position, data.center, data.half_size, data.corner_radius);
-	F32 factor = 1 - metal::saturate(distance);
-
-	distance = Rectangle(
-	        data.position, data.clip_center, data.clip_half_size, data.clip_corner_radius);
-	factor *= 1 - metal::saturate(distance);
-
 	metal::sampler behind_sampler(metal::mag_filter::linear, metal::min_filter::linear,
 	        metal::address::mirrored_repeat);
 
@@ -356,9 +341,7 @@ EffectsFragmentShader(EffectsRasterizerData data [[stage_in]], metal::texture2d<
 		samples += weight * behind.sample(behind_sampler, sample_position);
 	}
 
-	samples /= weights_sum;
-
-	return samples * factor;
+	return samples / weights_sum;
 }
 
 struct GameRasterizerData
