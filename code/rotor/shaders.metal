@@ -226,15 +226,13 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 
 	if (!data.untextured)
 	{
-		metal::sampler glyph_atlas_sampler(
-		        metal::mag_filter::linear, metal::min_filter::linear);
+		metal::sampler glyph_atlas_sampler(metal::filter::linear);
 		factor *= glyph_atlas.sample(glyph_atlas_sampler, data.texture_coordinates).r;
 	}
 
 	if (data.effects_background)
 	{
-		metal::sampler effects_background_sampler(
-		        metal::mag_filter::linear, metal::min_filter::linear);
+		metal::sampler effects_background_sampler(metal::filter::linear);
 		V4 effects_background_color =
 		        effects_background.sample(effects_background_sampler, data.position_uv);
 		return factor * (data.color + effects_background_color * (1 - data.color.a));
@@ -310,8 +308,7 @@ GaussianWeights(thread F32 *weights, F32 sigma)
 fragment V4
 EffectsFragmentShader(EffectsRasterizerData data [[stage_in]], metal::texture2d<F32> behind)
 {
-	metal::sampler behind_sampler(metal::mag_filter::linear, metal::min_filter::linear,
-	        metal::address::mirrored_repeat);
+	metal::sampler behind_sampler(metal::filter::linear, metal::address::mirrored_repeat);
 
 	F32 weights[sample_count] = {0};
 
