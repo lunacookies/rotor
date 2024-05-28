@@ -230,7 +230,7 @@ FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atl
 	{
 		metal::sampler glyph_atlas_sampler(
 		        metal::mag_filter::linear, metal::min_filter::linear);
-		factor *= glyph_atlas.sample(glyph_atlas_sampler, data.texture_coordinates).a;
+		factor *= glyph_atlas.sample(glyph_atlas_sampler, data.texture_coordinates).r;
 	}
 
 	return data.color * factor;

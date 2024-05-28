@@ -16,7 +16,7 @@ GlyphAtlasInit(GlyphAtlas *atlas, Arena *arena, id<MTLDevice> device, F32 scale_
 	MTLTextureDescriptor *descriptor = [[MTLTextureDescriptor alloc] init];
 	descriptor.width = atlas->size.x;
 	descriptor.height = atlas->size.y;
-	descriptor.pixelFormat = MTLPixelFormatA8Unorm;
+	descriptor.pixelFormat = MTLPixelFormatR8Unorm;
 	atlas->texture = [device newTextureWithDescriptor:descriptor];
 
 	atlas->slot_count = 1 << 16;
