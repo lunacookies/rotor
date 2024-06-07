@@ -1,7 +1,3 @@
-@interface
-MainView () <CALayerDelegate>
-@end
-
 typedef struct Box Box;
 struct Box
 {
@@ -1576,28 +1572,33 @@ MainViewInit(void)
 	setenv("MTL_DEBUG_LAYER_VALIDATE_STORE_ACTIONS", "1", 1);
 }
 
+@interface
+MainView () <CALayerDelegate>
+{
+	Arena *permanent_arena;
+	Arena *frame_arena;
+
+	CAMetalLayer *metal_layer;
+	id<MTLCommandQueue> command_queue;
+	id<MTLRenderPipelineState> pipeline_state;
+	id<MTLRenderPipelineState> effects_pipeline_state;
+	id<MTLTexture> offscreen_texture_1;
+	id<MTLTexture> offscreen_texture_2;
+
+	CVDisplayLinkRef display_link;
+
+	GlyphAtlas glyph_atlas;
+
+	id<MTLRenderPipelineState> game_pipeline_state;
+	U64 game_count;
+	V2 *game_positions;
+	V2 *game_velocities;
+	F32 *game_sizes;
+	V3 *game_colors;
+}
+@end
+
 @implementation MainView
-
-Arena *permanent_arena;
-Arena *frame_arena;
-
-CAMetalLayer *metal_layer;
-id<MTLCommandQueue> command_queue;
-id<MTLRenderPipelineState> pipeline_state;
-id<MTLRenderPipelineState> effects_pipeline_state;
-id<MTLTexture> offscreen_texture_1;
-id<MTLTexture> offscreen_texture_2;
-
-CVDisplayLinkRef display_link;
-
-GlyphAtlas glyph_atlas;
-
-id<MTLRenderPipelineState> game_pipeline_state;
-U64 game_count;
-V2 *game_positions;
-V2 *game_velocities;
-F32 *game_sizes;
-V3 *game_colors;
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
