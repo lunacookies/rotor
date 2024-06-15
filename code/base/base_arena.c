@@ -18,14 +18,6 @@ ArenaClear(Arena *arena)
 function void *
 ArenaPush(Arena *arena, U64 size, U64 align)
 {
-	void *ptr = ArenaPushNoZero(arena, size, align);
-	MemoryZero(ptr, size);
-	return ptr;
-}
-
-function void *
-ArenaPushNoZero(Arena *arena, U64 size, U64 align)
-{
 	U8 *ptr = (U8 *)arena;
 	U64 padding = AlignPadPow2((U64)(ptr + arena->used), align);
 	U64 needed_space = size + padding;
@@ -44,5 +36,6 @@ ArenaPushNoZero(Arena *arena, U64 size, U64 align)
 	arena->used += padding;
 	U8 *allocation = ptr + arena->used;
 	arena->used += size;
+	MemoryZero(allocation, size);
 	return allocation;
 }
