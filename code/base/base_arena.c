@@ -12,6 +12,11 @@ ArenaAlloc(void)
 function void
 ArenaClear(Arena *arena)
 {
+	U8 *ptr = (U8 *)arena;
+	U8 *start = ptr + sizeof(Arena);
+	U8 *end = ptr + arena->used;
+	MemoryZero(start, end - start);
+
 	arena->used = sizeof(Arena);
 }
 
@@ -36,6 +41,5 @@ ArenaPush(Arena *arena, U64 size, U64 align)
 	arena->used += padding;
 	U8 *allocation = ptr + arena->used;
 	arena->used += size;
-	MemoryZero(allocation, size);
 	return allocation;
 }
