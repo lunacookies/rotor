@@ -1594,7 +1594,7 @@ MainView () <CALayerDelegate>
 	id<MTLTexture> offscreen_texture_1;
 	id<MTLTexture> offscreen_texture_2;
 
-	CVDisplayLinkRef display_link;
+	CADisplayLink *display_link;
 
 	GlyphAtlas glyph_atlas;
 
@@ -1707,8 +1707,8 @@ MainView () <CALayerDelegate>
 		game_colors[i].b = (F32)arc4random_uniform(1024) / 1024;
 	}
 
-	CVDisplayLinkCreateWithActiveCGDisplays(&display_link);
-	CVDisplayLinkSetOutputCallback(display_link, DisplayLinkCallback, (__bridge void *)self);
+	display_link = [self displayLinkWithTarget:self
+	                                  selector:@selector(displayLinkDidRequestFrame)];
 
 	return self;
 }
@@ -1922,7 +1922,7 @@ MainView () <CALayerDelegate>
 	GlyphAtlasInit(&glyph_atlas, permanent_arena, metal_layer.device, scale_factor);
 	StateInit(frame_arena, &glyph_atlas);
 	metal_layer.contentsScale = self.window.backingScaleFactor;
-	CVDisplayLinkStart(display_link);
+	[display_link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 
 	[self updateOffscreenTextures];
 }
@@ -1965,19 +1965,9 @@ MainView () <CALayerDelegate>
 	offscreen_texture_2.label = @"Offscreen texture 2";
 }
 
-function CVReturn
-DisplayLinkCallback(CVDisplayLinkRef _display_link,
-        const CVTimeStamp *in_now,
-        const CVTimeStamp *in_output_time,
-        CVOptionFlags flags_in,
-        CVOptionFlags *flags_out,
-        void *display_link_context)
+- (void)displayLinkDidRequestFrame
 {
-	MainView *view = (__bridge MainView *)display_link_context;
-	dispatch_sync(dispatch_get_main_queue(), ^{
-	  [view.layer setNeedsDisplay];
-	});
-	return kCVReturnSuccess;
+	[self.layer setNeedsDisplay];
 }
 
 - (void)updateTrackingAreas
