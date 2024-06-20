@@ -107,8 +107,11 @@ struct RasterizerData
 };
 
 vertex RasterizerData
-VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], constant Box *boxes,
-        constant V2 *bounds, constant V2 *texture_bounds)
+VertexShader(U32 vertex_id [[vertex_id]],
+        U32 instance_id [[instance_id]],
+        constant Box *boxes,
+        constant V2 *bounds,
+        constant V2 *texture_bounds)
 {
 	RasterizerData result = {0};
 
@@ -183,7 +186,8 @@ VertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]], const
 }
 
 fragment V4
-FragmentShader(RasterizerData data [[stage_in]], metal::texture2d<F32> glyph_atlas,
+FragmentShader(RasterizerData data [[stage_in]],
+        metal::texture2d<F32> glyph_atlas,
         metal::texture2d<F32> effects_background)
 {
 	F32 factor = 1;
@@ -253,8 +257,11 @@ struct EffectsRasterizerData
 constant global U32 sample_count = 64;
 
 vertex EffectsRasterizerData
-EffectsVertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]],
-        constant EffectsBox *boxes, constant V2 *bounds, constant B32 *is_vertical,
+EffectsVertexShader(U32 vertex_id [[vertex_id]],
+        U32 instance_id [[instance_id]],
+        constant EffectsBox *boxes,
+        constant V2 *bounds,
+        constant B32 *is_vertical,
         constant F32 *offscreen_texture_scale_factor)
 {
 	EffectsRasterizerData result = {0};
@@ -348,8 +355,12 @@ struct GameRasterizerData
 };
 
 vertex GameRasterizerData
-GameVertexShader(U32 vertex_id [[vertex_id]], U32 instance_id [[instance_id]],
-        constant V2 *positions, constant F32 *sizes, constant V3 *colors, constant V2 *bounds)
+GameVertexShader(U32 vertex_id [[vertex_id]],
+        U32 instance_id [[instance_id]],
+        constant V2 *positions,
+        constant F32 *sizes,
+        constant V3 *colors,
+        constant V2 *bounds)
 {
 	V2 corner = corners[vertex_id];
 	V2 position = positions[instance_id];

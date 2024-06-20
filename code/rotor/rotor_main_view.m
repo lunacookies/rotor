@@ -161,7 +161,12 @@ MatchingRenderPass(Arena *arena, Render *render, B32 is_effects, V2 box_origin, 
 }
 
 function Box *
-AddBox(Arena *arena, Render *render, V2 origin, V2 size, V2 clip_origin, V2 clip_size,
+AddBox(Arena *arena,
+        Render *render,
+        V2 origin,
+        V2 size,
+        V2 clip_origin,
+        V2 clip_size,
         F32 clip_corner_radius)
 {
 	RenderPass *render_pass = MatchingRenderPass(arena, render, 0, origin, size);
@@ -1345,8 +1350,12 @@ BuildUI(void)
 }
 
 function void
-RenderViewState(ViewState *view_state, V2 clip_origin, V2 clip_size, F32 clip_corner_radius,
-        F32 scale_factor, Render *render)
+RenderViewState(ViewState *view_state,
+        V2 clip_origin,
+        V2 clip_size,
+        F32 clip_corner_radius,
+        F32 scale_factor,
+        Render *render)
 {
 	if (view_state->view.clip)
 	{
@@ -1957,8 +1966,11 @@ MainView () <CALayerDelegate>
 }
 
 function CVReturn
-DisplayLinkCallback(CVDisplayLinkRef _display_link, const CVTimeStamp *in_now,
-        const CVTimeStamp *in_output_time, CVOptionFlags flags_in, CVOptionFlags *flags_out,
+DisplayLinkCallback(CVDisplayLinkRef _display_link,
+        const CVTimeStamp *in_now,
+        const CVTimeStamp *in_output_time,
+        CVOptionFlags flags_in,
+        CVOptionFlags *flags_out,
         void *display_link_context)
 {
 	MainView *view = (__bridge MainView *)display_link_context;
