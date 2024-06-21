@@ -571,6 +571,7 @@ StateInit(Arena *frame_arena, GlyphAtlas *glyph_atlas)
 	state->frame_arena = frame_arena;
 	state->glyph_atlas = glyph_atlas;
 	state->font = (__bridge CTFontRef)[NSFont systemFontOfSize:14 weight:NSFontWeightRegular];
+	CFRetain(state->font);
 }
 
 function void
