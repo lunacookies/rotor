@@ -18,11 +18,8 @@
 S32
 main(S32 argument_count, char **arguments)
 {
-	@autoreleasepool
-	{
-		[NSApplication sharedApplication];
-		AppDelegate *app_delegate = [[AppDelegate alloc] init];
-		NSApp.delegate = app_delegate;
-		[NSApp run];
-	}
+	[NSApplication sharedApplication];
+	AppDelegate *app_delegate = [[AppDelegate alloc] init];
+	NSApp.delegate = app_delegate;
+	[NSApp run];
 }
